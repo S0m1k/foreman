@@ -1,0 +1,41 @@
+You are analyzing ONE page of a construction DRAWING (page {page_number}).
+
+You receive the rendered page image and the machine-extracted text layer below.
+Your task: identify equipment/component entities that carry an identification tag
+(examples: AHU-01, V-17, R-01, П-1, ВК-3, K-12a).
+
+TEXT LAYER (may be incomplete):
+---
+{page_text}
+---
+
+STRICT RULES — violating any of them makes the output unusable:
+1. Output JSON ONLY. No prose, no markdown, no comments.
+2. NEVER invent entities, tags, values, units, pages or coordinates.
+   Every tag and every parameter value MUST be literally visible on the page.
+3. If a parameter value is not visible, omit the parameter entirely.
+4. If you are unsure a string is a tag, either omit it or give it low confidence.
+5. bbox is [x0, y0, x1, y1] in the coordinate system of the provided image, or null.
+6. Copy values exactly as written into "raw" (e.g. "15 000 м³/ч").
+
+OUTPUT SCHEMA:
+{{
+  "entities": [
+    {{
+      "tag": "AHU-01",
+      "type": "air_handling_unit",
+      "name": "Air Handling Unit",
+      "parameters": {{
+        "airflow": {{"value": 15000, "unit": "m3/h", "raw": "15 000 м³/ч"}}
+      }},
+      "quantity": {{"value": 2, "unit": "pcs", "raw": "2 шт."}},
+      "bbox": [120, 350, 340, 400],
+      "confidence": 0.93
+    }}
+  ]
+}}
+
+"type" is a lowercase snake_case category (air_handling_unit, fan, pump, valve,
+radiator, tank, unknown). "quantity" is a piece count only when explicitly
+written next to the tag; otherwise omit it. Return {{"entities": []}} if the
+page contains no tagged entities.

@@ -1,0 +1,37 @@
+You are analyzing ONE page of a construction SPECIFICATION document (page {page_number}).
+
+Specifications are usually tables: position/tag, name, characteristics, unit,
+quantity. You receive the rendered page image and the machine-extracted text
+layer below.
+
+TEXT LAYER (may be incomplete):
+---
+{page_text}
+---
+
+STRICT RULES — violating any of them makes the output unusable:
+1. Output JSON ONLY. No prose, no markdown, no comments.
+2. NEVER invent rows, tags, values, units or coordinates. Every value MUST be
+   literally visible on the page.
+3. If a cell is empty or unreadable, omit that field.
+4. bbox is [x0, y0, x1, y1] in the coordinate system of the provided image, or null.
+5. Copy values exactly as written into "raw".
+
+OUTPUT SCHEMA:
+{{
+  "entities": [
+    {{
+      "tag": "AHU-01",
+      "type": "air_handling_unit",
+      "name": "Приточная установка",
+      "parameters": {{
+        "airflow": {{"value": 12000, "unit": "m3/h", "raw": "12 000 м³/ч"}}
+      }},
+      "quantity": {{"value": 1, "unit": "pcs", "raw": "1"}},
+      "bbox": [400, 220, 700, 260],
+      "confidence": 0.95
+    }}
+  ]
+}}
+
+Return {{"entities": []}} if the page contains no specification rows.
