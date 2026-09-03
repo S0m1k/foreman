@@ -79,9 +79,17 @@ def convert_dwg_to_dxf(
         shutil.copyfile(dwg_path, staged)
         # args: input_dir output_dir out_version out_type recurse audit [filter]
         command = [converter, in_dir, out_dir, "ACAD2018", "DXF", "0", "1"]
+        # The Qt runtime resolves its platform plugin relative to the process
+        # working directory on some installs; point both at the exe location.
+        converter_dir = str(Path(converter).parent)
+        env = os.environ.copy()
+        plugin_dir = Path(converter_dir) / "platforms"
+        if plugin_dir.exists():
+            env.setdefault("QT_QPA_PLATFORM_PLUGIN_PATH", str(plugin_dir))
         try:
             result = subprocess.run(
-                command, capture_output=True, text=True, timeout=300
+                command, capture_output=True, text=True, timeout=300,
+                cwd=converter_dir, env=env,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise CadConversionError(f"ODA File Converter failed to run: {exc}") from exc
