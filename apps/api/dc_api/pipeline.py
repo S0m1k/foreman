@@ -32,7 +32,26 @@ from .db import (
     utcnow,
 )
 from .settings import settings
-from .storage import crop_key, get_storage, page_image_key
+from .storage import cad_text_key, crop_key, get_storage, page_image_key
+
+
+def _load_pages(project_id: str, document: Document, pdf_path: str) -> list[PageContent]:
+    """Parse a document's PDF; for CAD uploads, use the exact CAD text layer.
+
+    The rendered CAD PDF has glyph outlines instead of text, so the sidecar
+    written at upload time (text pulled from DXF entities, already in PDF
+    coordinates) replaces the parsed layer.
+    """
+    pages = parse_pdf(pdf_path)
+    try:
+        sidecar = get_storage().read(cad_text_key(project_id, document.id))
+    except Exception:
+        return pages
+    cad_page = PageContent.model_validate_json(sidecar.decode("utf-8"))
+    if pages:
+        cad_page.width, cad_page.height = pages[0].width, pages[0].height
+    logger.info("using CAD text sidecar for document %s", document.id)
+    return [cad_page]
 
 logger = logging.getLogger(__name__)
 
@@ -259,7 +278,9 @@ def run_analysis(project_id: str, run_id: str) -> None:
             run.prompt_version = settings.prompt_version
 
         # 2-3. parse + render drawing -------------------------------------
-        drawing_pages = tracker.run("parse_drawing", parse_pdf, drawing_pdf)
+        drawing_pages = tracker.run(
+            "parse_drawing", _load_pages, project_id, drawing_doc, drawing_pdf
+        )
         drawing_page_ids = tracker.run(
             "render_drawing_pages", _persist_pages, project_id, drawing_doc, drawing_pages
         )
@@ -285,7 +306,9 @@ def run_analysis(project_id: str, run_id: str) -> None:
         drawing_entities = tracker.run("extract_drawing_entities", extract_drawing)
 
         # 7-8. specification ----------------------------------------------
-        spec_pages = tracker.run("parse_specification", parse_pdf, spec_pdf)
+        spec_pages = tracker.run(
+            "parse_specification", _load_pages, project_id, spec_doc, spec_pdf
+        )
         spec_page_ids = _persist_pages(project_id, spec_doc, spec_pages)
         if any(p.needs_ocr for p in spec_pages):
             ocr = create_ocr_provider(settings.ocr_provider)

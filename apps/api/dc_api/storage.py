@@ -98,6 +98,16 @@ def document_key(project_id: str, document_id: str) -> str:
     return f"projects/{project_id}/documents/{document_id}.pdf"
 
 
+def raw_document_key(project_id: str, document_id: str, extension: str) -> str:
+    """Original upload when it was not a PDF (e.g. .dwg/.dxf sources)."""
+    return f"projects/{project_id}/documents/{document_id}.original{extension}"
+
+
+def cad_text_key(project_id: str, document_id: str) -> str:
+    """Sidecar with text blocks extracted from CAD entities."""
+    return f"projects/{project_id}/documents/{document_id}.cadtext.json"
+
+
 def page_image_key(project_id: str, document_id: str, page_number: int) -> str:
     return f"projects/{project_id}/pages/{document_id}/p{page_number}.png"
 

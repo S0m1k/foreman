@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     ocr_provider: str = "auto"
     ocr_render_dpi: int = 300
 
+    # -- CAD (DWG/DXF) -----------------------------------------------------
+    # DWG needs the free ODA File Converter; DXF works out of the box.
+    oda_converter_path: str | None = None
+
     # -- misc --------------------------------------------------------------
     page_render_dpi: int = 200
     max_upload_mb: int = 100

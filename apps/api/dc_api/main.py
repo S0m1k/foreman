@@ -168,13 +168,22 @@ async def upload_document(
     type: str = Query(pattern="^(DRAWING|SPECIFICATION)$"),
     session: Session = Depends(get_session),
 ):
+    import tempfile
+    from pathlib import Path
+
+    from dc_cad import CadConversionError, is_cad_file, load_cad_document
+
+    from .storage import cad_text_key, raw_document_key
+
     _project_or_404(session, project_id)
-    if not (file.filename or "").lower().endswith(".pdf"):
-        raise HTTPException(422, "only PDF files are supported in the MVP")
+    filename = file.filename or ""
+    extension = Path(filename).suffix.lower()
+    if extension not in (".pdf", ".dxf", ".dwg"):
+        raise HTTPException(422, "supported formats: PDF, DXF, DWG")
     data = await file.read()
     if len(data) > settings.max_upload_mb * 1024 * 1024:
         raise HTTPException(413, f"file exceeds {settings.max_upload_mb} MB")
-    if not data.startswith(b"%PDF"):
+    if extension == ".pdf" and not data.startswith(b"%PDF"):
         raise HTTPException(422, "file is not a valid PDF")
 
     # One document per type per project: a re-upload replaces the previous one.
@@ -182,14 +191,38 @@ async def upload_document(
     document = Document(
         project_id=project_id,
         type=type,
-        filename=file.filename,
+        filename=filename,
         storage_path="",
     )
     session.add(document)
     session.flush()
     key = document_key(project_id, document.id)
     storage = get_storage()
-    storage.save(key, data)
+
+    if is_cad_file(filename):
+        # CAD flow: keep the original, render a PDF for the pipeline, and
+        # store the CAD text layer (exact coordinates, no OCR) as a sidecar.
+        with tempfile.TemporaryDirectory(prefix="foreman_cad_") as tmp:
+            source = Path(tmp) / f"upload{extension}"
+            source.write_bytes(data)
+            pdf_path = Path(tmp) / "rendered.pdf"
+            try:
+                page = load_cad_document(source, pdf_path, settings.oda_converter_path)
+            except CadConversionError as exc:
+                session.rollback()
+                raise HTTPException(422, str(exc)) from exc
+            except Exception as exc:
+                session.rollback()
+                raise HTTPException(422, f"could not read CAD file: {exc}") from exc
+            storage.save(key, pdf_path.read_bytes())
+            storage.save(raw_document_key(project_id, document.id, extension), data)
+            storage.save(
+                cad_text_key(project_id, document.id),
+                page.model_dump_json().encode("utf-8"),
+            )
+    else:
+        storage.save(key, data)
+
     document.storage_path = key
     document.sha256 = compute_sha256(storage.local_path(key))
     session.commit()

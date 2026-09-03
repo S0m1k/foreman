@@ -8,14 +8,24 @@ type Slot = {
   label: string;
   hint: string;
   type: "DRAWING" | "SPECIFICATION";
+  accept: string;
+  formats: string;
 };
 
 const SLOTS: Slot[] = [
-  { label: "DRAWING", hint: "Plan / layout sheet, PDF", type: "DRAWING" },
+  {
+    label: "DRAWING",
+    hint: "Plan / layout sheet",
+    type: "DRAWING",
+    accept: ".pdf,.dxf,.dwg,application/pdf",
+    formats: "PDF · DXF · DWG",
+  },
   {
     label: "SPECIFICATION",
-    hint: "Equipment schedule / bill of materials, PDF",
+    hint: "Equipment schedule / bill of materials",
     type: "SPECIFICATION",
+    accept: ".pdf,application/pdf",
+    formats: "PDF",
   },
 ];
 
@@ -55,17 +65,17 @@ function UploadZone({
         <p className="font-semibold text-[var(--ok)]">✓ {file.name}</p>
       ) : (
         <>
-          <p className="font-semibold mb-1">Upload PDF</p>
+          <p className="font-semibold mb-1">Upload file</p>
           <p className="text-xs text-[var(--muted)]">{slot.hint}</p>
-          <p className="text-xs text-[var(--muted)] mt-2 opacity-70">
-            DWG — coming soon
+          <p className="text-xs text-[var(--muted)] mt-2 opacity-70 mono">
+            {slot.formats}
           </p>
         </>
       )}
       <input
         ref={input}
         type="file"
-        accept="application/pdf"
+        accept={slot.accept}
         className="hidden"
         onChange={(e) => {
           const chosen = e.target.files?.[0];

@@ -78,9 +78,18 @@ prompts/        версионированные промпты (…_v1.txt)
 tests/          unit · integration (HTTP e2e) · benchmark
 ```
 
+## DWG / DXF
+
+Чертёж можно загружать как **DXF** (работает из коробки, ezdxf) или **DWG**
+(нужен бесплатный [ODA File Converter](https://www.opendesign.com/guestfiles/oda_file_converter);
+путь — `ODA_CONVERTER_PATH`). Пайплайн: DWG → DXF → рендер в PDF (ezdxf +
+matplotlib) + текст берётся напрямую из CAD-сущностей (TEXT/MTEXT/атрибуты
+блоков) с точными координатами — без OCR. Дальше работает обычный
+PDF-пайплайн: evidence, кропы, сравнение.
+
 ## Известные ограничения MVP
 
-- DWG/BIM/IFC — вне scope (UI помечает DWG как «coming soon»).
+- BIM/IFC/Revit — вне scope; DWG рендерится по model space (layouts не разворачиваются).
 - Уверенности: `extraction`, `matching`, `conflict` считаются раздельно;
   всё с итоговой уверенностью < 0.70 показывается как **Needs review**,
   а не как ошибка (принцип: лучше меньше, но точнее).
