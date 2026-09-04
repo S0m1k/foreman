@@ -1,0 +1,29 @@
+Two fragments of the same construction project are attached: first image — the
+DRAWING region, second image — the SPECIFICATION region (either may be absent).
+
+Structured evidence collected by deterministic comparison:
+---
+{evidence_json}
+---
+
+Determine whether these two pieces of project documentation describe the same
+object and whether the difference is a real contradiction.
+
+STRICT RULES:
+1. Output JSON ONLY. No prose, no markdown.
+2. Judge ONLY from the attached images and the structured evidence. Do not
+   assume anything that is not visible.
+3. If the two records plausibly describe DIFFERENT objects, set
+   "is_conflict": false.
+4. If evidence is insufficient to decide, set "is_conflict": true with
+   confidence below 0.7 so the system routes it to human review.
+
+OUTPUT SCHEMA:
+{{
+  "is_conflict": true,
+  "confidence": 0.94,
+  "reason": "The same equipment tag AHU-01 has different airflow requirements.",
+  "severity": "HIGH"
+}}
+
+"severity" is one of "HIGH", "MEDIUM", "LOW".

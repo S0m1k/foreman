@@ -25,6 +25,19 @@ logger = logging.getLogger(__name__)
 VLM_TILE_PT = 400.0
 VLM_TILE_OVERLAP_PT = 60.0
 VLM_TILE_DPI = 200
+# A telephone-book sheet must not turn into hours of inference: above this
+# budget the tile size grows (and DPI effectively drops) instead.
+MAX_VLM_TILES_PER_PAGE = 24
+
+
+def _page_tiles(width: float, height: float) -> list[BBox]:
+    tile, overlap = VLM_TILE_PT, VLM_TILE_OVERLAP_PT
+    tiles = tile_grid(width, height, tile, overlap)
+    while len(tiles) > MAX_VLM_TILES_PER_PAGE:
+        tile *= 1.5
+        overlap = tile * 0.15
+        tiles = tile_grid(width, height, tile, overlap)
+    return tiles
 
 
 def _intersects(a: BBox, b: BBox) -> bool:
@@ -39,9 +52,12 @@ def _vlm_extract_tiled(
     vision_model: VisionModel,
 ) -> list[Entity]:
     """Run VLM extraction tile by tile and merge grounded results."""
-    tiles = tile_grid(page.width, page.height, VLM_TILE_PT, VLM_TILE_OVERLAP_PT)
+    import time
+
+    tiles = _page_tiles(page.width, page.height)
     merged: list[Entity] = []
     for index, tile in enumerate(tiles):
+        started = time.monotonic()
         image = render_region(pdf_path, page.page_number, tile, dpi=VLM_TILE_DPI)
         tile_text = "\n".join(
             block.text for block in page.text_blocks if _intersects(block.bbox, tile)
@@ -62,6 +78,11 @@ def _vlm_extract_tiled(
             )
             continue
         entities = ground_vlm_entities(raw, page, document_id, strict=not page.needs_ocr)
+        logger.info(
+            "VLM %s p.%d tile %d/%d: %.1fs, %d grounded entities",
+            document_id, page.page_number, index + 1, len(tiles),
+            time.monotonic() - started, len(entities),
+        )
         for entity in entities:
             bbox = vlm_bbox_to_points(entity.bbox, VLM_TILE_DPI)
             if bbox is not None:
@@ -93,6 +114,15 @@ def extract_page_entities(
     if deterministic and not page.needs_ocr:
         # Vector page that already yielded grounded entities: the VLM would
         # mostly re-read what the text layer said, at minutes per page.
+        return deterministic
+    if document_type == DocumentType.SPECIFICATION and not page.needs_ocr:
+        # A vector specification page without detectable rows is almost always
+        # a drawing sheet bound into the album (plans, details, schemes) —
+        # tiling those through the VLM costs minutes each and yields entities
+        # that do not belong in the specification side of the comparison.
+        logger.info(
+            "skipping VLM for vector spec page %d (no table rows found)", page.page_number
+        )
         return deterministic
 
     vlm_entities = _vlm_extract_tiled(pdf_path, page, document_id, document_type, vision_model)

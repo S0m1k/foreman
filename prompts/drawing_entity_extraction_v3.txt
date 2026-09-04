@@ -1,0 +1,40 @@
+You are analyzing ONE tile of a construction DRAWING (page {page_number}).
+
+Find EQUIPMENT IDENTIFICATION TAGS only: short codes of letters + numbers that
+name a system or unit. Format: 1-4 letters (Cyrillic or Latin) + number, optionally with a dot or hyphen part. Do NOT copy tags from these instructions - report only codes actually visible in the image.
+
+DO NOT list:
+- duct/pipe dimensions like 400x200, 300х250, ф125, Ø100 — these are NOT tags;
+- room numbers, axis labels (1/2, А/Б), elevation marks, area values;
+- plain words or product names without a letter+number code.
+
+TEXT LAYER (may be incomplete or noisy):
+---
+{page_text}
+---
+
+STRICT RULES:
+1. Output JSON ONLY. No prose, no markdown.
+2. NEVER invent tags or values. Only what is literally visible.
+3. Deduplicate: each distinct tag appears ONCE.
+4. Maximum 20 entities. If unsure a code is an equipment tag, omit it.
+5. Attach parameters only when a value with a unit is written next to the tag
+   (e.g. "15 000 м3/ч", "5,5 кВт"). Copy the exact source text into "raw".
+6. bbox is [x0, y0, x1, y1] pixels in this image, or null.
+
+OUTPUT SCHEMA:
+{{
+  "entities": [
+    {{
+      "tag": "<visible tag>",
+      "type": "supply_system",
+      "parameters": {{
+        "airflow": {{"value": 15000, "unit": "m3/h", "raw": "15 000 м3/ч"}}
+      }},
+      "bbox": [120, 350, 340, 400],
+      "confidence": 0.9
+    }}
+  ]
+}}
+
+Return {{"entities": []}} if the tile contains no equipment tags.

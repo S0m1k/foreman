@@ -66,10 +66,37 @@ def parse_json_reply(raw: str) -> dict[str, Any]:
     try:
         parsed = json.loads(text[start : end + 1])
     except json.JSONDecodeError as exc:
-        raise VisionModelError(f"model reply is invalid JSON: {exc}") from exc
+        parsed = _salvage_truncated_json(text[start:])
+        if parsed is None:
+            raise VisionModelError(f"model reply is invalid JSON: {exc}") from exc
+        logger.warning("VLM reply was truncated; salvaged %d complete entities",
+                       len(parsed.get("entities", [])))
     if not isinstance(parsed, dict):
         raise VisionModelError("model reply is not a JSON object")
     return parsed
+
+
+def _salvage_truncated_json(text: str, max_attempts: int = 80) -> dict[str, Any] | None:
+    """Recover complete leading objects from a reply cut off mid-generation.
+
+    A truncated ``{"entities": [{...}, {...}, {"tag": "П`` still holds valid
+    complete objects; cut back to each ``}`` from the end and try closing the
+    array and the root object.
+    """
+    position = len(text)
+    for _ in range(max_attempts):
+        position = text.rfind("}", 0, position)
+        if position <= 0:
+            return None
+        candidate = text[: position + 1]
+        for closer in ("]}", "]}}", "}]}"):
+            try:
+                parsed = json.loads(candidate + closer)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict):
+                return parsed
+    return None
 
 
 class OpenAICompatVisionModel(VisionModel):
@@ -104,6 +131,65 @@ class OpenAICompatVisionModel(VisionModel):
     # -- plumbing ----------------------------------------------------------
 
     def _chat(self, prompt: str, images: list[bytes]) -> dict[str, Any]:
+        try:
+            if self._is_ollama():
+                return self._chat_ollama_native(prompt, images)
+            return self._chat_openai(prompt, images)
+        except httpx.HTTPError as exc:
+            # network hiccups (timeouts, resets, model reloads) must degrade
+            # into a skipped call, never a failed analysis
+            raise VisionModelError(f"VLM request failed: {exc!r}") from exc
+
+    def _is_ollama(self) -> bool:
+        return ":11434" in str(self._client.base_url)
+
+    def _chat_ollama_native(self, prompt: str, images: list[bytes]) -> dict[str, Any]:
+        """Ollama's own /api/chat: real ``think: false`` and grammar-enforced JSON.
+
+        The OpenAI-compat layer silently ignores ``think``, so reasoning
+        models burn the whole token budget thinking and return empty content.
+        """
+        root = str(self._client.base_url).replace("/v1", "").rstrip("/")
+        response = self._client.post(
+            f"{root}/api/chat",
+            json={
+                "model": self._model,
+                "stream": False,
+                "think": False,
+                "format": "json",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": prompt,
+                        "images": [base64.b64encode(i).decode("ascii") for i in images],
+                    }
+                ],
+                "options": {
+                    "temperature": self._temperature,
+                    "num_predict": self._max_tokens,
+                    "num_ctx": 8192,
+                    # Drawings are full of repeated dimension labels; without a
+                    # penalty the model enumerates them until the token limit.
+                    "repeat_penalty": 1.15,
+                },
+            },
+        )
+        if response.status_code != 200:
+            raise VisionModelError(f"VLM HTTP {response.status_code}: {response.text[:300]}")
+        try:
+            message = response.json()["message"]
+        except (KeyError, ValueError) as exc:
+            raise VisionModelError(f"unexpected Ollama response shape: {exc}") from exc
+        reply = (message.get("content") or "").strip()
+        if not reply:
+            # Some Ollama builds ignore think:false and emit the answer inside
+            # the thinking field; take it when it is the only thing we got.
+            reply = (message.get("thinking") or "").strip()
+        if not reply:
+            raise VisionModelError("Ollama returned empty content")
+        return parse_json_reply(reply)
+
+    def _chat_openai(self, prompt: str, images: list[bytes]) -> dict[str, Any]:
         content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
         for image in images:
             encoded = base64.b64encode(image).decode("ascii")

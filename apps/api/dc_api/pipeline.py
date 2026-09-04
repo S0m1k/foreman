@@ -156,6 +156,12 @@ class _StageTracker:
         self._flush()
         return result
 
+    def note(self, stage: str, text: str) -> None:
+        """Live progress note on a running stage (shown in the UI)."""
+        entry = next(s for s in self.stages if s["stage"] == stage)
+        entry["note"] = text
+        self._flush()
+
     def skip(self, stage: str, note: str = "") -> None:
         entry = next(s for s in self.stages if s["stage"] == stage)
         entry["status"] = "SKIPPED"
@@ -320,6 +326,11 @@ def run_analysis(project_id: str, run_id: str) -> None:
         def extract_drawing():
             entities: list[Entity] = []
             for page in drawing_pages:
+                tracker.note(
+                    "extract_drawing_entities",
+                    f"page {page.page_number}/{len(drawing_pages)}",
+                )
+                logger.info("drawing extraction: page %d/%d", page.page_number, len(drawing_pages))
                 model = _vlm_cached(vision_model, drawing_doc.sha256, page.page_number)
                 entities += extract_page_entities(
                     drawing_pdf, page, drawing_doc.id, DocumentType.DRAWING, model
@@ -355,6 +366,14 @@ def run_analysis(project_id: str, run_id: str) -> None:
         def extract_spec():
             entities: list[Entity] = []
             for page in spec_pages:
+                tracker.note(
+                    "extract_specification",
+                    f"page {page.page_number}/{len(spec_pages)}, {len(entities)} entities so far",
+                )
+                logger.info(
+                    "spec extraction: page %d/%d (%d entities so far)",
+                    page.page_number, len(spec_pages), len(entities),
+                )
                 model = _vlm_cached(vision_model, spec_doc.sha256, page.page_number)
                 entities += extract_page_entities(
                     spec_pdf, page, spec_doc.id, DocumentType.SPECIFICATION, model
