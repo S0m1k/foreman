@@ -25,7 +25,6 @@ from dc_schemas import (
     FindingStatus,
     FindingType,
     PageContent,
-    Quantity,
     Severity,
 )
 from dc_vision import create_vision_model
@@ -170,13 +169,19 @@ def _vlm_cached(vision_model, document_sha: str, page_number: int):
     if vision_model is None:
         return None
 
-    key = f"{document_sha}:{page_number}:{vision_model.version}:{settings.prompt_version}"
+    import hashlib
 
     class _CachedExtract:
         def __getattr__(self, item):
             return getattr(vision_model, item)
 
         def extract_entities(self, image, context):
+            # image hash in the key: tiled pages issue several calls per page
+            image_sha = hashlib.sha256(image).hexdigest()[:16]
+            key = (
+                f"{document_sha}:{page_number}:{image_sha}"
+                f":{vision_model.version}:{settings.prompt_version}"
+            )
             with session_scope() as session:
                 cached = session.get(VlmCache, key)
                 if cached is not None:
@@ -274,6 +279,11 @@ def run_analysis(project_id: str, run_id: str) -> None:
         drawing_pdf = storage.local_path(drawing_doc.storage_path)
         spec_pdf = storage.local_path(spec_doc.storage_path)
 
+        try:
+            vlm_extra = json.loads(settings.vlm_extra_json) if settings.vlm_extra_json else None
+        except ValueError:
+            logger.warning("VLM_EXTRA_JSON is not valid JSON; ignoring")
+            vlm_extra = None
         vision_model = create_vision_model(
             settings.vlm_base_url,
             settings.vlm_model,
@@ -281,6 +291,8 @@ def run_analysis(project_id: str, run_id: str) -> None:
             prompts_dir=settings.prompts_dir,
             prompt_version=settings.prompt_version,
             timeout=settings.vlm_timeout,
+            max_tokens=settings.vlm_max_tokens,
+            extra_body=vlm_extra,
         )
         with session_scope() as session:
             run = session.get(AnalysisRun, run_id)

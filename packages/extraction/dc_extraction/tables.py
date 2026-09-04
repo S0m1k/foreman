@@ -11,9 +11,7 @@ from __future__ import annotations
 import logging
 
 import pymupdf
-
 from dc_pdf import clean_text
-
 from dc_schemas import Entity, ExtractionSource, PageContent, Quantity, units
 
 from .rules import _extract_parameters, _extract_quantity, guess_type

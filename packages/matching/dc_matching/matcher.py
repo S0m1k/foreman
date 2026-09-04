@@ -14,9 +14,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from rapidfuzz import fuzz
-
 from dc_schemas import Entity, EntityMatch, MatchLevel
+from rapidfuzz import fuzz
 
 from .normalize import fuzzy_key, normalize_tag, strip_leading_zeros
 

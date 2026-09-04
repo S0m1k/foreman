@@ -34,7 +34,10 @@ class Settings(BaseSettings):
     vlm_base_url: str | None = None
     vlm_model: str = "qwen3-vl-8b-instruct"
     vlm_api_key: str = "not-needed"
-    vlm_timeout: float = 180.0
+    vlm_timeout: float = 300.0
+    vlm_max_tokens: int = 4096
+    # Extra JSON merged into each chat request (e.g. Ollama's {"think": false}).
+    vlm_extra_json: str = '{"think": false}'
     prompt_version: str = "v1"
     prompts_dir: str = "./prompts"
 

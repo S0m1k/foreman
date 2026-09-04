@@ -102,9 +102,13 @@ def verify_findings(
     spec_pdf: str | None = None,
 ) -> list[Finding]:
     """Filter and annotate findings; only what survives is shown to the user."""
+    presence_types = {FindingType.MISSING_IN_SPECIFICATION, FindingType.MISSING_ON_DRAWING}
     verified: list[Finding] = []
     for finding in findings:
-        if vision_model is not None:
+        # Presence findings have evidence on one side only — a crop of the
+        # side where the object *is* cannot prove it is absent elsewhere, so
+        # asking the model would just burn minutes per finding for nothing.
+        if vision_model is not None and finding.type not in presence_types:
             try:
                 verdict = _model_verdict(finding, vision_model, drawing_pdf, spec_pdf)
             except (VisionModelError, ValueError, TypeError) as exc:

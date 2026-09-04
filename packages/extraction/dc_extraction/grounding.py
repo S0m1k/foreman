@@ -18,7 +18,7 @@ import re
 import unicodedata
 from typing import Any
 
-from dc_schemas import Entity, ExtractionSource, PageContent, Quantity, units
+from dc_schemas import Entity, ExtractionSource, PageContent, Quantity
 
 from .tags import find_tags
 
@@ -49,12 +49,25 @@ def _value_grounded(quantity: Quantity, folded_page: str) -> bool:
     return any(v in folded_page for v in _number_variants(quantity.value))
 
 
+# On scanned pages the "text layer" is OCR output that may itself be garbage;
+# an ungrounded-but-plausible VLM tag is then kept at this confidence so the
+# finding routes to NEEDS_REVIEW instead of being either trusted or lost.
+LENIENT_UNGROUNDED_CONFIDENCE = 0.6
+
+
 def ground_vlm_entities(
     raw: dict[str, Any],
     page: PageContent,
     document_id: str,
+    strict: bool = True,
 ) -> list[Entity]:
-    """Validate and convert a VLM extraction reply into grounded entities."""
+    """Validate and convert a VLM extraction reply into grounded entities.
+
+    ``strict=False`` (scanned pages): a tag missing from the (OCR) text layer
+    is kept with capped confidence instead of dropped — the OCR text cannot be
+    trusted as ground truth there.  Parameter *values* are still required to
+    be grounded; numbers are where hallucinations hurt most.
+    """
     folded_page = _fold(page.text + "\n" + "\n".join(b.text for b in page.text_blocks))
     grounded: list[Entity] = []
     for item in raw.get("entities", []) or []:
@@ -63,7 +76,8 @@ def ground_vlm_entities(
         tag = str(item.get("tag") or "").strip()
         if not tag or not find_tags(tag):
             continue
-        if _fold(tag) not in folded_page:
+        tag_grounded = _fold(tag) in folded_page
+        if not tag_grounded and strict:
             logger.info("dropping ungrounded VLM entity %r (tag not on page)", tag)
             continue
 
@@ -104,6 +118,8 @@ def ground_vlm_entities(
             confidence = max(0.0, min(1.0, float(item.get("confidence", 0.5))))
         except (TypeError, ValueError):
             confidence = 0.5
+        if not tag_grounded:
+            confidence = min(confidence, LENIENT_UNGROUNDED_CONFIDENCE)
 
         bbox = item.get("bbox")
         if not (isinstance(bbox, (list, tuple)) and len(bbox) == 4):

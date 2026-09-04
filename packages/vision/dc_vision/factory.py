@@ -36,6 +36,8 @@ def create_vision_model(
     prompts_dir: str | Path = "prompts",
     prompt_version: str = "v1",
     timeout: float = 180.0,
+    max_tokens: int = 4096,
+    extra_body: dict | None = None,
 ) -> VisionModel | None:
     """Build the configured VLM, or ``None`` when no endpoint is configured.
 
@@ -52,4 +54,6 @@ def create_vision_model(
         timeout=timeout,
         prompts=load_prompts(prompts_dir, prompt_version),
         prompt_version=prompt_version,
+        max_tokens=max_tokens,
+        extra_body=extra_body,
     )

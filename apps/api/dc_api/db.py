@@ -49,8 +49,8 @@ class Project(Base):
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
 
-    documents: Mapped[list["Document"]] = relationship(back_populates="project")
-    findings: Mapped[list["FindingRow"]] = relationship(back_populates="project")
+    documents: Mapped[list[Document]] = relationship(back_populates="project")
+    findings: Mapped[list[FindingRow]] = relationship(back_populates="project")
 
 
 class Document(Base):
@@ -67,7 +67,7 @@ class Document(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     project: Mapped[Project] = relationship(back_populates="documents")
-    pages: Mapped[list["Page"]] = relationship(back_populates="document")
+    pages: Mapped[list[Page]] = relationship(back_populates="document")
 
 
 class Page(Base):

@@ -11,7 +11,6 @@ import hashlib
 from pathlib import Path
 
 import pymupdf
-
 from dc_schemas import BBox, ExtractionSource, PageContent, TextBlock
 
 # Below this many characters per page we assume the text layer is unusable and
@@ -145,3 +144,47 @@ def bbox_to_pixels(bbox: BBox, dpi: int) -> tuple[int, int, int, int]:
     scale = dpi / PDF_BASE_DPI
     x0, y0, x1, y1 = bbox
     return round(x0 * scale), round(y0 * scale), round(x1 * scale), round(y1 * scale)
+
+
+def render_region(
+    path: str | Path, page_number: int, bbox: BBox, dpi: int = DEFAULT_RENDER_DPI
+) -> bytes:
+    """Render an exact region of a page (PDF points, no padding) to PNG."""
+    with pymupdf.open(path) as doc:
+        page = doc[page_number - 1]
+        clip = pymupdf.Rect(*bbox) & page.rect
+        pixmap = page.get_pixmap(dpi=dpi, clip=clip)
+        return pixmap.tobytes("png")
+
+
+def tile_grid(
+    width: float, height: float, tile: float, overlap: float
+) -> list[BBox]:
+    """Cover a page with overlapping square tiles (PDF points).
+
+    Tiles step by ``tile - overlap`` so anything cut by one tile edge is whole
+    in a neighbour.  A page smaller than ~1.5 tiles is returned as one tile.
+    """
+    if tile <= overlap:
+        raise ValueError("tile must be larger than overlap")
+    if width <= tile * 1.5 and height <= tile * 1.5:
+        return [(0.0, 0.0, width, height)]
+    step = tile - overlap
+    xs = [x for x in _tile_starts(width, tile, step)]
+    ys = [y for y in _tile_starts(height, tile, step)]
+    return [
+        (x, y, min(x + tile, width), min(y + tile, height))
+        for y in ys
+        for x in xs
+    ]
+
+
+def _tile_starts(extent: float, tile: float, step: float) -> list[float]:
+    starts = [0.0]
+    while starts[-1] + tile < extent:
+        nxt = starts[-1] + step
+        if nxt + tile >= extent:
+            starts.append(max(0.0, extent - tile))
+            break
+        starts.append(nxt)
+    return starts

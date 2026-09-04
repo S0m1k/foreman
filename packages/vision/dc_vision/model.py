@@ -84,11 +84,15 @@ class OpenAICompatVisionModel(VisionModel):
         temperature: float = 0.0,
         prompts: dict[str, str] | None = None,
         prompt_version: str = "v1",
+        max_tokens: int = 4096,
+        extra_body: dict[str, Any] | None = None,
     ) -> None:
         self.name = model
         self.version = model
         self.prompt_version = prompt_version
         self._temperature = temperature
+        self._max_tokens = max_tokens
+        self._extra_body = extra_body or {}
         self._prompts = prompts or {}
         self._client = httpx.Client(
             base_url=base_url.rstrip("/"),
@@ -111,15 +115,25 @@ class OpenAICompatVisionModel(VisionModel):
             json={
                 "model": self._model,
                 "temperature": self._temperature,
+                "max_tokens": self._max_tokens,
                 "messages": [{"role": "user", "content": content}],
+                **self._extra_body,
             },
         )
         if response.status_code != 200:
             raise VisionModelError(f"VLM HTTP {response.status_code}: {response.text[:300]}")
         try:
-            reply = response.json()["choices"][0]["message"]["content"]
+            payload = response.json()
+            choice = payload["choices"][0]
+            reply = choice["message"]["content"]
         except (KeyError, IndexError, ValueError) as exc:
             raise VisionModelError(f"unexpected VLM response shape: {exc}") from exc
+        if not (reply or "").strip():
+            # Thinking-mode models can burn the whole budget on reasoning.
+            raise VisionModelError(
+                f"VLM returned empty content (finish_reason="
+                f"{choice.get('finish_reason')!r}); raise max_tokens or disable thinking"
+            )
         return parse_json_reply(reply)
 
     def _prompt(self, key: str) -> str:

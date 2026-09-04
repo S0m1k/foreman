@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import logging
 
+from dc_pdf import compute_sha256
 from fastapi import Depends, FastAPI, HTTPException, Query, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-
-from dc_pdf import compute_sha256
 
 from .db import (
     AnalysisRun,

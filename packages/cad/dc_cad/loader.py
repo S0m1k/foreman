@@ -19,6 +19,8 @@ import matplotlib
 
 matplotlib.use("Agg")
 
+from dc_pdf import clean_text  # noqa: E402
+from dc_schemas import ExtractionSource, PageContent, TextBlock  # noqa: E402
 from ezdxf import bbox as ezdxf_bbox  # noqa: E402
 from ezdxf.addons.drawing import Frontend, RenderContext  # noqa: E402
 from ezdxf.addons.drawing.config import (  # noqa: E402
@@ -28,9 +30,6 @@ from ezdxf.addons.drawing.config import (  # noqa: E402
 )
 from ezdxf.addons.drawing.matplotlib import MatplotlibBackend  # noqa: E402
 from matplotlib import pyplot as plt  # noqa: E402
-
-from dc_pdf import clean_text  # noqa: E402
-from dc_schemas import ExtractionSource, PageContent, TextBlock  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
