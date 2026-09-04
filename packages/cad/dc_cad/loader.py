@@ -71,8 +71,16 @@ class _Transform:
         return (min(ax, bx), min(ay, by), max(ax, bx), max(ay, by))
 
 
+MAX_BLOCK_DEPTH = 4  # nested INSERTs deeper than this are decoration, not data
+
+
 def _text_entities(msp) -> list[tuple[str, float, float, float]]:
-    """Yield (text, x, y, height) for every textual entity in model space."""
+    """Yield (text, x, y, height) for every textual entity in model space.
+
+    Block references are exploded recursively (``virtual_entities``) because
+    real drawings keep most of their labels *inside* blocks — equipment
+    callouts, system tags, leader notes — not as top-level TEXT.
+    """
     found: list[tuple[str, float, float, float]] = []
 
     def add(text: str, insert, height: float) -> None:
@@ -81,18 +89,27 @@ def _text_entities(msp) -> list[tuple[str, float, float, float]]:
             return
         found.append((text, float(insert[0]), float(insert[1]), float(height or 2.5)))
 
-    for entity in msp:
-        kind = entity.dxftype()
-        try:
-            if kind == "TEXT":
-                add(entity.dxf.text, entity.dxf.insert, entity.dxf.height)
-            elif kind == "MTEXT":
-                add(entity.plain_text(), entity.dxf.insert, entity.dxf.char_height)
-            elif kind == "INSERT":
-                for attrib in entity.attribs:
-                    add(attrib.dxf.text, attrib.dxf.insert, attrib.dxf.height)
-        except Exception as exc:  # entity-level corruption must not kill the page
-            logger.warning("skipping unreadable %s entity: %s", kind, exc)
+    def walk(entities, depth: int) -> None:
+        for entity in entities:
+            kind = entity.dxftype()
+            try:
+                if kind == "TEXT" or kind == "ATTRIB":
+                    add(entity.dxf.text, entity.dxf.insert, entity.dxf.height)
+                elif kind == "MTEXT":
+                    add(entity.plain_text(), entity.dxf.insert, entity.dxf.char_height)
+                elif kind == "INSERT":
+                    for attrib in entity.attribs:
+                        add(attrib.dxf.text, attrib.dxf.insert, attrib.dxf.height)
+                    if depth < MAX_BLOCK_DEPTH:
+                        # virtual_entities yields the block content transformed
+                        # into world coordinates of this reference
+                        walk(entity.virtual_entities(), depth + 1)
+                elif kind == "DIMENSION" and depth < MAX_BLOCK_DEPTH:
+                    walk(entity.virtual_entities(), depth + 1)
+            except Exception as exc:  # entity-level corruption must not kill the page
+                logger.warning("skipping unreadable %s entity: %s", kind, exc)
+
+    walk(msp, 0)
     return found
 
 

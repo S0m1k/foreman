@@ -77,14 +77,71 @@ class PaddleOCRProvider:
         return blocks
 
 
+_TESSERACT_CANDIDATES = [
+    "C:/Program Files/Tesseract-OCR/tesseract.exe",
+    "C:/Program Files (x86)/Tesseract-OCR/tesseract.exe",
+    "/usr/bin/tesseract",
+]
+_TESSDATA_CANDIDATES = [
+    "D:/Foreman/storage/tessdata",
+    "./storage/tessdata",
+]
+
+
+def _find_tesseract() -> str | None:
+    import os
+    import shutil
+    from pathlib import Path
+
+    for candidate in [os.environ.get("TESSERACT_CMD"), *_TESSERACT_CANDIDATES]:
+        if candidate and Path(candidate).exists():
+            return candidate
+    return shutil.which("tesseract")
+
+
+def _find_tessdata(binary: str, lang: str) -> str | None:
+    """A tessdata dir containing every requested language, or None for default."""
+    import os
+    from pathlib import Path
+
+    required = lang.split("+")
+    default = Path(binary).parent / "tessdata"
+    for candidate in [os.environ.get("TESSDATA_PREFIX"), str(default), *_TESSDATA_CANDIDATES]:
+        if not candidate:
+            continue
+        directory = Path(candidate)
+        if all((directory / f"{code}.traineddata").exists() for code in required):
+            return str(directory)
+    return None
+
+
 class TesseractOCRProvider:
     name = "tesseract"
 
     def __init__(self, lang: str = "rus+eng") -> None:
         import pytesseract  # lazy
 
+        binary = _find_tesseract()
+        if binary is None:
+            raise RuntimeError("tesseract executable not found")
+        pytesseract.pytesseract.tesseract_cmd = binary
         self._pytesseract = pytesseract
+        tessdata = _find_tessdata(binary, lang)
+        if tessdata is None:
+            logger.warning("no tessdata dir with %s found; falling back to eng", lang)
+            lang = "eng"
+            tessdata = _find_tessdata(binary, lang)
         self._lang = lang
+        self._config = ""
+        if tessdata:
+            # env var instead of --tessdata-dir: config args break on quoted
+            # Windows paths inside pytesseract
+            import os
+
+            os.environ["TESSDATA_PREFIX"] = tessdata
+        # fail fast so create_ocr_provider("auto") can fall through
+        pytesseract.get_tesseract_version()
+        logger.info("tesseract ready: %s lang=%s tessdata=%s", binary, lang, tessdata)
 
     def extract(self, image: bytes, dpi: int) -> list[TextBlock]:
         from PIL import Image
@@ -92,31 +149,47 @@ class TesseractOCRProvider:
         data = self._pytesseract.image_to_data(
             Image.open(io.BytesIO(image)),
             lang=self._lang,
+            config=self._config,
             output_type=self._pytesseract.Output.DICT,
         )
-        blocks: list[TextBlock] = []
-        for i, text in enumerate(data["text"]):
-            text = (text or "").strip()
-            if not text:
-                continue
+        # Group word boxes into their printed line: tags and their values must
+        # stay together ("15 000 м3/ч" is one measurement, not three words).
+        lines: dict[tuple, dict] = {}
+        for i, word in enumerate(data["text"]):
+            word = (word or "").strip()
             confidence = float(data["conf"][i])
-            if confidence < 0:
+            if not word or confidence < 0:
                 continue
+            key = (data["block_num"][i], data["par_num"][i], data["line_num"][i])
             left, top = float(data["left"][i]), float(data["top"][i])
-            width, height = float(data["width"][i]), float(data["height"][i])
+            right, bottom = left + float(data["width"][i]), top + float(data["height"][i])
+            line = lines.setdefault(
+                key,
+                {"words": [], "confs": [], "x0": left, "y0": top, "x1": right, "y1": bottom},
+            )
+            line["words"].append(word)
+            line["confs"].append(confidence)
+            line["x0"] = min(line["x0"], left)
+            line["y0"] = min(line["y0"], top)
+            line["x1"] = max(line["x1"], right)
+            line["y1"] = max(line["y1"], bottom)
+
+        blocks: list[TextBlock] = []
+        for line in lines.values():
             blocks.append(
                 TextBlock(
-                    text=text,
+                    text=" ".join(line["words"]),
                     bbox=(
-                        _to_points(left, dpi),
-                        _to_points(top, dpi),
-                        _to_points(left + width, dpi),
-                        _to_points(top + height, dpi),
+                        _to_points(line["x0"], dpi),
+                        _to_points(line["y0"], dpi),
+                        _to_points(line["x1"], dpi),
+                        _to_points(line["y1"], dpi),
                     ),
-                    confidence=confidence / 100.0,
+                    confidence=min(line["confs"]) / 100.0,
                     source=ExtractionSource.OCR,
                 )
             )
+        blocks.sort(key=lambda b: (b.bbox[1], b.bbox[0]))
         return blocks
 
 

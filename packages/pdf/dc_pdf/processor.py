@@ -90,12 +90,35 @@ def parse_pdf(path: str | Path) -> list[PageContent]:
     return pages
 
 
+# Large-format sheets (A1/A0 scans) explode at high DPI; stay under PIL's
+# decompression-bomb ceiling with headroom.
+MAX_RENDER_PIXELS = 120_000_000
+
+
+def effective_dpi(width_pt: float, height_pt: float, dpi: int) -> int:
+    """Largest DPI <= requested that keeps the rendered image a sane size."""
+    width_in, height_in = width_pt / 72.0, height_pt / 72.0
+    pixels = width_in * height_in * dpi * dpi
+    if pixels <= MAX_RENDER_PIXELS:
+        return dpi
+    return max(72, int((MAX_RENDER_PIXELS / (width_in * height_in)) ** 0.5))
+
+
 def render_page(path: str | Path, page_number: int, dpi: int = DEFAULT_RENDER_DPI) -> bytes:
-    """Render one page (1-based) to PNG bytes."""
+    """Render one page (1-based) to PNG bytes (DPI capped for huge sheets)."""
+    png, _ = render_page_capped(path, page_number, dpi)
+    return png
+
+
+def render_page_capped(
+    path: str | Path, page_number: int, dpi: int = DEFAULT_RENDER_DPI
+) -> tuple[bytes, int]:
+    """Like :func:`render_page` but also returns the DPI actually used."""
     with pymupdf.open(path) as doc:
         page = doc[page_number - 1]
-        pixmap = page.get_pixmap(dpi=dpi)
-        return pixmap.tobytes("png")
+        used_dpi = effective_dpi(page.rect.width, page.rect.height, dpi)
+        pixmap = page.get_pixmap(dpi=used_dpi)
+        return pixmap.tobytes("png"), used_dpi
 
 
 def crop_region(

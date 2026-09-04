@@ -17,8 +17,17 @@ from dc_comparison import compare, verify_findings
 from dc_extraction import extract_page_entities
 from dc_matching import match_entities
 from dc_ocr import create_ocr_provider
-from dc_pdf import crop_region, parse_pdf, render_page
-from dc_schemas import DocumentType, Entity, Finding, PageContent, Quantity
+from dc_pdf import crop_region, parse_pdf, render_page, render_page_capped
+from dc_schemas import (
+    DocumentType,
+    Entity,
+    Finding,
+    FindingStatus,
+    FindingType,
+    PageContent,
+    Quantity,
+    Severity,
+)
 from dc_vision import create_vision_model
 
 from .db import (
@@ -185,8 +194,10 @@ def _ocr_pages(pdf_path: str, pages: list[PageContent], ocr) -> None:
     for page in pages:
         if not page.needs_ocr:
             continue
-        image = render_page(pdf_path, page.page_number, dpi=settings.ocr_render_dpi)
-        blocks = ocr.extract(image, dpi=settings.ocr_render_dpi)
+        image, used_dpi = render_page_capped(
+            pdf_path, page.page_number, dpi=settings.ocr_render_dpi
+        )
+        blocks = ocr.extract(image, dpi=used_dpi)
         if blocks:
             page.text_blocks = blocks
             page.text = "\n".join(b.text for b in blocks)
@@ -304,6 +315,21 @@ def run_analysis(project_id: str, run_id: str) -> None:
             return entities
 
         drawing_entities = tracker.run("extract_drawing_entities", extract_drawing)
+        if not drawing_entities:
+            # Comparing an empty drawing against a full specification would
+            # bury the user in bogus MISSING_ON_DRAWING findings.  Refuse.
+            scanned = any(p.needs_ocr for p in drawing_pages)
+            hint = (
+                "the drawing appears to be a scan without a text layer and no OCR "
+                "engine is configured (set OCR_PROVIDER and install one)"
+                if scanned
+                else "no equipment tags were recognised on the drawing"
+            )
+            raise PipelineError(
+                f"No entities were extracted from the drawing: {hint}. "
+                "Analysis was stopped to avoid flooding the results with "
+                "false MISSING_ON_DRAWING findings."
+            )
 
         # 7-8. specification ----------------------------------------------
         spec_pages = tracker.run(
@@ -347,6 +373,22 @@ def run_analysis(project_id: str, run_id: str) -> None:
             drawing_pdf,
             spec_pdf,
         )
+
+        # A drawing that covers a fraction of the specification (a single
+        # floor plan vs a project-wide schedule) makes "missing on drawing"
+        # weak evidence: keep those findings but route them to review.
+        drawing_tag_count = len({e.tag for e in drawing_entities})
+        spec_tag_count = len({e.tag for e in spec_entities})
+        if spec_tag_count and drawing_tag_count / spec_tag_count < 0.5:
+            for finding in findings:
+                if finding.type == FindingType.MISSING_ON_DRAWING:
+                    finding.status = FindingStatus.NEEDS_REVIEW
+                    finding.severity = Severity.MEDIUM
+                    finding.explanation += (
+                        " Note: the drawing contains far fewer systems than the "
+                        "specification (likely a partial sheet), so absence on "
+                        "this sheet is weak evidence."
+                    )
 
         # 13-14. save findings + evidence crops ----------------------------
         def save():

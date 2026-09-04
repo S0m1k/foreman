@@ -125,9 +125,11 @@ def match_entities(
             drawing_left.remove(drawing_entity)
             spec_left.remove(spec_entity)
 
-    # Orphans.
-    for entity in drawing_left:
-        matches.append(EntityMatch(drawing_entity=entity, spec_entity=None))
-    for entity in spec_left:
-        matches.append(EntityMatch(drawing_entity=None, spec_entity=entity))
+    # Orphans — one per distinct tag, not one per occurrence: a specification
+    # that lists the same system on twenty rows is still one missing object.
+    orphan_key = lambda t: strip_leading_zeros(normalize_tag(t))  # noqa: E731
+    for group in _group_by(drawing_left, orphan_key).values():
+        matches.append(EntityMatch(drawing_entity=_pick(group), spec_entity=None))
+    for group in _group_by(spec_left, orphan_key).values():
+        matches.append(EntityMatch(drawing_entity=None, spec_entity=_pick(group)))
     return matches
