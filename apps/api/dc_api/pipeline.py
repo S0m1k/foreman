@@ -264,7 +264,12 @@ def _save_crops(project_id: str, findings: list[Finding], pdf_paths: dict[str, s
 
 
 def run_analysis(project_id: str, run_id: str) -> None:
-    """Execute the full pipeline for one project's drawing + specification."""
+    """Execute the full pipeline for one project's drawings + specifications.
+
+    A project may hold several files on each side; all drawings are pooled
+    into one entity set and compared against the pooled specification set, so
+    an object drawn on sheet 3 and specified in album 2 still matches.
+    """
     logger.info("analysis started: project=%s run=%s", project_id, run_id)
     tracker = _StageTracker(run_id)
     storage = get_storage()
@@ -273,17 +278,19 @@ def run_analysis(project_id: str, run_id: str) -> None:
         def validate():
             with session_scope() as session:
                 docs = session.query(Document).filter_by(project_id=project_id).all()
-                drawing = next((d for d in docs if d.type == "DRAWING"), None)
-                spec = next((d for d in docs if d.type == "SPECIFICATION"), None)
-            if drawing is None or spec is None:
+                drawings = [d for d in docs if d.type == "DRAWING"]
+                specs = [d for d in docs if d.type == "SPECIFICATION"]
+            if not drawings or not specs:
                 raise PipelineError(
-                    "Both a drawing PDF and a specification PDF must be uploaded."
+                    "At least one drawing and one specification must be uploaded."
                 )
-            return drawing, spec
+            return drawings, specs
 
-        drawing_doc, spec_doc = tracker.run("validate_files", validate)
-        drawing_pdf = storage.local_path(drawing_doc.storage_path)
-        spec_pdf = storage.local_path(spec_doc.storage_path)
+        drawing_docs, spec_docs = tracker.run("validate_files", validate)
+        pdf_paths = {
+            doc.id: storage.local_path(doc.storage_path)
+            for doc in drawing_docs + spec_docs
+        }
 
         try:
             vlm_extra = json.loads(settings.vlm_extra_json) if settings.vlm_extra_json else None
@@ -306,90 +313,86 @@ def run_analysis(project_id: str, run_id: str) -> None:
             run.model_version = vision_model.version if vision_model else None
             run.prompt_version = settings.prompt_version
 
-        # 2-3. parse + render drawing -------------------------------------
-        drawing_pages = tracker.run(
-            "parse_drawing", _load_pages, project_id, drawing_doc, drawing_pdf
-        )
-        drawing_page_ids = tracker.run(
-            "render_drawing_pages", _persist_pages, project_id, drawing_doc, drawing_pages
-        )
-        tracker.skip("extract_drawing_text", "done during parse")
+        ocr = None
+        all_page_ids: dict[tuple[str, int], str] = {}
+        scanned_any = False
 
-        # 5. OCR when needed ----------------------------------------------
-        if any(p.needs_ocr for p in drawing_pages):
-            ocr = create_ocr_provider(settings.ocr_provider)
-            tracker.run("ocr_drawing", _ocr_pages, drawing_pdf, drawing_pages, ocr)
-        else:
-            tracker.skip("ocr_drawing", "text layer sufficient")
-
-        # 6. drawing entities ---------------------------------------------
-        def extract_drawing():
+        def process_document(doc, doc_type: DocumentType, stage: str, doc_index: int, doc_total: int):
+            """Parse, render, OCR and extract one document; returns entities."""
+            nonlocal ocr, scanned_any
+            pdf_path = pdf_paths[doc.id]
+            prefix = f"{doc.filename} ({doc_index}/{doc_total})"
+            pages = _load_pages(project_id, doc, pdf_path)
+            all_page_ids.update(_persist_pages(project_id, doc, pages))
+            if any(p.needs_ocr for p in pages):
+                scanned_any = True
+                if ocr is None:
+                    ocr = create_ocr_provider(settings.ocr_provider)
+                _ocr_pages(pdf_path, pages, ocr)
             entities: list[Entity] = []
-            for page in drawing_pages:
-                tracker.note(
-                    "extract_drawing_entities",
-                    f"page {page.page_number}/{len(drawing_pages)}",
+            for page in pages:
+                tracker.note(stage, f"{prefix}: page {page.page_number}/{len(pages)}")
+                logger.info(
+                    "%s extraction: %s page %d/%d (%d entities so far)",
+                    doc_type.value.lower(), doc.filename,
+                    page.page_number, len(pages), len(entities),
                 )
-                logger.info("drawing extraction: page %d/%d", page.page_number, len(drawing_pages))
-                model = _vlm_cached(vision_model, drawing_doc.sha256, page.page_number)
-                entities += extract_page_entities(
-                    drawing_pdf, page, drawing_doc.id, DocumentType.DRAWING, model
+                model = _vlm_cached(vision_model, doc.sha256, page.page_number)
+                entities += extract_page_entities(pdf_path, page, doc.id, doc_type, model)
+            return entities
+
+        # 2-6. drawings ----------------------------------------------------
+        tracker.skip("parse_drawing", "merged into extraction")
+        tracker.skip("render_drawing_pages", "merged into extraction")
+        tracker.skip("extract_drawing_text", "done during parse")
+        tracker.skip("ocr_drawing", "runs per document when needed")
+
+        def extract_drawings():
+            entities: list[Entity] = []
+            for index, doc in enumerate(drawing_docs, start=1):
+                entities += process_document(
+                    doc, DocumentType.DRAWING, "extract_drawing_entities",
+                    index, len(drawing_docs),
                 )
             return entities
 
-        drawing_entities = tracker.run("extract_drawing_entities", extract_drawing)
+        drawing_entities = tracker.run("extract_drawing_entities", extract_drawings)
         if not drawing_entities:
-            # Comparing an empty drawing against a full specification would
-            # bury the user in bogus MISSING_ON_DRAWING findings.  Refuse.
-            scanned = any(p.needs_ocr for p in drawing_pages)
+            # Comparing empty drawings against full specifications would bury
+            # the user in bogus MISSING_ON_DRAWING findings.  Refuse.
             hint = (
-                "the drawing appears to be a scan without a text layer and no OCR "
+                "the drawings appear to be scans without a text layer and no OCR "
                 "engine is configured (set OCR_PROVIDER and install one)"
-                if scanned
-                else "no equipment tags were recognised on the drawing"
+                if scanned_any
+                else "no equipment tags were recognised on any drawing"
             )
             raise PipelineError(
-                f"No entities were extracted from the drawing: {hint}. "
+                f"No entities were extracted from the drawings: {hint}. "
                 "Analysis was stopped to avoid flooding the results with "
                 "false MISSING_ON_DRAWING findings."
             )
 
-        # 7-8. specification ----------------------------------------------
-        spec_pages = tracker.run(
-            "parse_specification", _load_pages, project_id, spec_doc, spec_pdf
-        )
-        spec_page_ids = _persist_pages(project_id, spec_doc, spec_pages)
-        if any(p.needs_ocr for p in spec_pages):
-            ocr = create_ocr_provider(settings.ocr_provider)
-            _ocr_pages(spec_pdf, spec_pages, ocr)
+        # 7-8. specifications ---------------------------------------------
+        tracker.skip("parse_specification", "merged into extraction")
 
-        def extract_spec():
+        def extract_specs():
             entities: list[Entity] = []
-            for page in spec_pages:
-                tracker.note(
-                    "extract_specification",
-                    f"page {page.page_number}/{len(spec_pages)}, {len(entities)} entities so far",
-                )
-                logger.info(
-                    "spec extraction: page %d/%d (%d entities so far)",
-                    page.page_number, len(spec_pages), len(entities),
-                )
-                model = _vlm_cached(vision_model, spec_doc.sha256, page.page_number)
-                entities += extract_page_entities(
-                    spec_pdf, page, spec_doc.id, DocumentType.SPECIFICATION, model
+            for index, doc in enumerate(spec_docs, start=1):
+                entities += process_document(
+                    doc, DocumentType.SPECIFICATION, "extract_specification",
+                    index, len(spec_docs),
                 )
             return entities
 
-        spec_entities = tracker.run("extract_specification", extract_spec)
+        spec_entities = tracker.run("extract_specification", extract_specs)
 
         # 9. normalisation happens inside Quantity.of; persist entities ----
         def persist_entities():
-            page_ids = {**drawing_page_ids, **spec_page_ids}
             with session_scope() as session:
-                for document_id in (drawing_doc.id, spec_doc.id):
-                    session.query(EntityRow).filter_by(document_id=document_id).delete()
+                for doc in drawing_docs + spec_docs:
+                    session.query(EntityRow).filter_by(document_id=doc.id).delete()
                 for entity in drawing_entities + spec_entities:
-                    session.add(_entity_to_row(entity, page_ids))
+                    session.add(_entity_to_row(entity, all_page_ids))
 
         tracker.run("normalize_entities", persist_entities)
 
@@ -401,8 +404,7 @@ def run_analysis(project_id: str, run_id: str) -> None:
             verify_findings,
             candidates,
             vision_model,
-            drawing_pdf,
-            spec_pdf,
+            pdf_paths,
         )
 
         # A drawing that covers a fraction of the specification (a single
@@ -423,11 +425,7 @@ def run_analysis(project_id: str, run_id: str) -> None:
 
         # 13-14. save findings + evidence crops ----------------------------
         def save():
-            _save_crops(
-                project_id,
-                findings,
-                {drawing_doc.id: drawing_pdf, spec_doc.id: spec_pdf},
-            )
+            _save_crops(project_id, findings, pdf_paths)
             with session_scope() as session:
                 session.query(FindingRow).filter_by(project_id=project_id).delete()
                 for finding in findings:

@@ -53,8 +53,11 @@ def _rule_based_verdict(finding: Finding) -> VerificationResult:
     )
 
 
-def _crop(pdf_path: str | None, evidence) -> bytes | None:
-    if not pdf_path or evidence is None or evidence.bbox is None:
+def _crop(pdf_paths: dict[str, str], evidence) -> bytes | None:
+    if evidence is None or evidence.bbox is None:
+        return None
+    pdf_path = pdf_paths.get(evidence.document_id)
+    if not pdf_path:
         return None
     try:
         return crop_region(pdf_path, evidence.page, evidence.bbox)
@@ -66,8 +69,7 @@ def _crop(pdf_path: str | None, evidence) -> bytes | None:
 def _model_verdict(
     finding: Finding,
     vision_model: VisionModel,
-    drawing_pdf: str | None,
-    spec_pdf: str | None,
+    pdf_paths: dict[str, str],
 ) -> VerificationResult:
     summary = {
         "finding_type": finding.type.value,
@@ -82,8 +84,8 @@ def _model_verdict(
     raw = vision_model.verify_conflict(
         {
             "summary": summary,
-            "drawing_crop": _crop(drawing_pdf, finding.drawing_evidence),
-            "spec_crop": _crop(spec_pdf, finding.spec_evidence),
+            "drawing_crop": _crop(pdf_paths, finding.drawing_evidence),
+            "spec_crop": _crop(pdf_paths, finding.spec_evidence),
         }
     )
     severity = raw.get("severity")
@@ -98,8 +100,7 @@ def _model_verdict(
 def verify_findings(
     findings: list[Finding],
     vision_model: VisionModel | None = None,
-    drawing_pdf: str | None = None,
-    spec_pdf: str | None = None,
+    pdf_paths: dict[str, str] | None = None,
 ) -> list[Finding]:
     """Filter and annotate findings; only what survives is shown to the user."""
     presence_types = {FindingType.MISSING_IN_SPECIFICATION, FindingType.MISSING_ON_DRAWING}
@@ -110,7 +111,7 @@ def verify_findings(
         # asking the model would just burn minutes per finding for nothing.
         if vision_model is not None and finding.type not in presence_types:
             try:
-                verdict = _model_verdict(finding, vision_model, drawing_pdf, spec_pdf)
+                verdict = _model_verdict(finding, vision_model, pdf_paths or {})
             except (VisionModelError, ValueError, TypeError) as exc:
                 logger.warning(
                     "verification failed for %s (%s): %s — falling back to rules",

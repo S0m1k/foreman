@@ -14,15 +14,15 @@ type Slot = {
 
 const SLOTS: Slot[] = [
   {
-    label: "DRAWING",
-    hint: "Plan / layout sheet",
+    label: "DRAWINGS",
+    hint: "Plans / layout sheets — one or many",
     type: "DRAWING",
     accept: ".pdf,.dxf,.dwg,application/pdf",
     formats: "PDF · DXF · DWG",
   },
   {
-    label: "SPECIFICATION",
-    hint: "Equipment schedule / bill of materials",
+    label: "SPECIFICATIONS",
+    hint: "Equipment schedules / bills of materials — one or many",
     type: "SPECIFICATION",
     accept: ".pdf,application/pdf",
     formats: "PDF",
@@ -31,21 +31,22 @@ const SLOTS: Slot[] = [
 
 function UploadZone({
   slot,
-  file,
-  onFile,
+  files,
+  onAdd,
+  onRemove,
 }: {
   slot: Slot;
-  file: File | null;
-  onFile: (f: File) => void;
+  files: File[];
+  onAdd: (f: File[]) => void;
+  onRemove: (index: number) => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
   return (
     <div
-      className={`card p-6 text-center cursor-pointer transition-colors ${
+      className={`card p-6 transition-colors ${
         dragOver ? "border-[var(--accent)]" : ""
       }`}
-      onClick={() => input.current?.click()}
       onDragOver={(e) => {
         e.preventDefault();
         setDragOver(true);
@@ -54,32 +55,57 @@ function UploadZone({
       onDrop={(e) => {
         e.preventDefault();
         setDragOver(false);
-        const dropped = e.dataTransfer.files?.[0];
-        if (dropped) onFile(dropped);
+        onAdd(Array.from(e.dataTransfer.files ?? []));
       }}
     >
-      <p className="mono text-xs font-bold tracking-widest text-[var(--muted)] mb-3">
+      <p className="mono text-xs font-bold tracking-widest text-[var(--muted)] mb-3 text-center">
         {slot.label}
       </p>
-      {file ? (
-        <p className="font-semibold text-[var(--ok)]">✓ {file.name}</p>
-      ) : (
-        <>
-          <p className="font-semibold mb-1">Upload file</p>
-          <p className="text-xs text-[var(--muted)]">{slot.hint}</p>
-          <p className="text-xs text-[var(--muted)] mt-2 opacity-70 mono">
-            {slot.formats}
-          </p>
-        </>
+
+      {files.length > 0 && (
+        <ul className="mb-3 space-y-1">
+          {files.map((file, index) => (
+            <li
+              key={`${file.name}-${index}`}
+              className="flex items-center justify-between gap-2 text-sm"
+            >
+              <span className="text-[var(--ok)] truncate">✓ {file.name}</span>
+              <button
+                className="text-[var(--muted)] hover:text-[var(--high)] shrink-0"
+                title="Remove"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemove(index);
+                }}
+              >
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
+
+      <div
+        className="text-center cursor-pointer py-2"
+        onClick={() => input.current?.click()}
+      >
+        <p className="font-semibold mb-1">
+          {files.length === 0 ? "Upload files" : "+ Add more"}
+        </p>
+        <p className="text-xs text-[var(--muted)]">{slot.hint}</p>
+        <p className="text-xs text-[var(--muted)] mt-2 opacity-70 mono">
+          {slot.formats}
+        </p>
+      </div>
       <input
         ref={input}
         type="file"
+        multiple
         accept={slot.accept}
         className="hidden"
         onChange={(e) => {
-          const chosen = e.target.files?.[0];
-          if (chosen) onFile(chosen);
+          onAdd(Array.from(e.target.files ?? []));
+          e.target.value = "";
         }}
       />
     </div>
@@ -89,30 +115,54 @@ function UploadZone({
 export default function NewCheck() {
   const router = useRouter();
   const [name, setName] = useState("");
-  const [files, setFiles] = useState<Record<string, File | null>>({
-    DRAWING: null,
-    SPECIFICATION: null,
+  const [files, setFiles] = useState<Record<string, File[]>>({
+    DRAWING: [],
+    SPECIFICATION: [],
   });
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const ready = files.DRAWING && files.SPECIFICATION && !busy;
+  const ready =
+    files.DRAWING.length > 0 && files.SPECIFICATION.length > 0 && !busy;
+
+  function addFiles(type: string, added: File[]) {
+    if (added.length === 0) return;
+    setFiles((prev) => {
+      const existing = prev[type];
+      const fresh = added.filter(
+        (f) => !existing.some((e) => e.name === f.name && e.size === f.size),
+      );
+      return { ...prev, [type]: [...existing, ...fresh] };
+    });
+  }
 
   async function start() {
-    if (!files.DRAWING || !files.SPECIFICATION) return;
+    if (!ready) return;
     setBusy(true);
     setError(null);
     try {
       const project = await api.createProject(
-        name.trim() || files.DRAWING.name.replace(/\.pdf$/i, ""),
+        name.trim() || files.DRAWING[0].name.replace(/\.(pdf|dxf|dwg)$/i, ""),
       );
-      await api.uploadDocument(project.id, "DRAWING", files.DRAWING);
-      await api.uploadDocument(project.id, "SPECIFICATION", files.SPECIFICATION);
+      const uploads: Array<["DRAWING" | "SPECIFICATION", File]> = [
+        ...files.DRAWING.map((f) => ["DRAWING", f] as ["DRAWING", File]),
+        ...files.SPECIFICATION.map(
+          (f) => ["SPECIFICATION", f] as ["SPECIFICATION", File],
+        ),
+      ];
+      for (let i = 0; i < uploads.length; i++) {
+        const [type, file] = uploads[i];
+        setProgress(`Uploading ${i + 1}/${uploads.length}: ${file.name}`);
+        await api.uploadDocument(project.id, type, file);
+      }
+      setProgress(null);
       await api.startAnalysis(project.id);
       router.push(`/checks/${project.id}`);
     } catch (e) {
       setError((e as Error).message);
       setBusy(false);
+      setProgress(null);
     }
   }
 
@@ -130,13 +180,19 @@ export default function NewCheck() {
         />
       </label>
 
-      <div className="grid sm:grid-cols-2 gap-4 mb-6">
+      <div className="grid sm:grid-cols-2 gap-4 mb-6 items-start">
         {SLOTS.map((slot) => (
           <UploadZone
             key={slot.type}
             slot={slot}
-            file={files[slot.type]}
-            onFile={(f) => setFiles((prev) => ({ ...prev, [slot.type]: f }))}
+            files={files[slot.type]}
+            onAdd={(added) => addFiles(slot.type, added)}
+            onRemove={(index) =>
+              setFiles((prev) => ({
+                ...prev,
+                [slot.type]: prev[slot.type].filter((_, i) => i !== index),
+              }))
+            }
           />
         ))}
       </div>
@@ -145,8 +201,12 @@ export default function NewCheck() {
         <p className="text-sm text-[var(--high)] mb-4">Error: {error}</p>
       )}
 
-      <button className="btn btn-primary w-full justify-center" disabled={!ready} onClick={start}>
-        {busy ? "Uploading…" : "Start analysis"}
+      <button
+        className="btn btn-primary w-full justify-center"
+        disabled={!ready}
+        onClick={start}
+      >
+        {busy ? progress ?? "Uploading…" : "Start analysis"}
       </button>
     </div>
   );

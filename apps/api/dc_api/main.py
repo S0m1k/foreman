@@ -185,8 +185,18 @@ async def upload_document(
     if extension == ".pdf" and not data.startswith(b"%PDF"):
         raise HTTPException(422, "file is not a valid PDF")
 
-    # One document per type per project: a re-upload replaces the previous one.
-    session.query(Document).filter_by(project_id=project_id, type=type).delete()
+    # Several files per type are allowed (sheets, albums); duplicates by
+    # content are rejected to keep re-uploads idempotent.
+    import hashlib
+
+    digest = hashlib.sha256(data).hexdigest()
+    existing = (
+        session.query(Document)
+        .filter_by(project_id=project_id, type=type, sha256=digest)
+        .first()
+    )
+    if existing is not None:
+        raise HTTPException(409, f"this file is already uploaded as {existing.filename!r}")
     document = Document(
         project_id=project_id,
         type=type,
@@ -234,6 +244,20 @@ async def upload_document(
         status=document.status,
         created_at=document.created_at,
     )
+
+
+@app.delete("/api/documents/{document_id}", status_code=204)
+def delete_document(document_id: str, session: Session = Depends(get_session)):
+    document = session.get(Document, document_id)
+    if document is None:
+        raise HTTPException(404, "document not found")
+    from .db import EntityRow, Page
+
+    session.query(EntityRow).filter_by(document_id=document_id).delete()
+    session.query(Page).filter_by(document_id=document_id).delete()
+    session.delete(document)
+    session.commit()
+    return Response(status_code=204)
 
 
 @app.get("/api/projects/{project_id}/documents", response_model=list[DocumentOut])
