@@ -94,3 +94,108 @@ def make_spec_pdf(path: str | Path, rows: list[SpecRow], title: str = "СПЕЦ�
         put(4, r, row.quantity)
     doc.save(str(path))
     doc.close()
+
+
+# --------------------------------------------------------------------------- #
+# Vector duct plan, for the takeoff pipeline.
+#
+# Drawn the way a real HVAC sheet is: each duct is a pair of parallel lines at
+# the true scale, insulation is a cross-hatch in the same colour between two
+# concentric outlines, and callouts are text stacks over a rule with a leader.
+# --------------------------------------------------------------------------- #
+
+import math  # noqa: E402
+
+MM_PER_PT_AT_1_100 = 25.4 / 72 * 100
+
+
+@dataclass
+class DuctSegment:
+    start: tuple[float, float]  # metres, in plan coordinates
+    end: tuple[float, float]
+    width_mm: float
+    colour: tuple[float, float, float] = (0.0, 0.0, 1.0)
+    insulated: bool = False
+    insulation_mm: float = 20.0
+    axis: bool = False          # dash-dot centre line, as drawn in round ducts
+    hatch_jitter: float = 0.0   # vary stroke length, as a hatch does in an elbow
+
+
+def _to_points(metres: float) -> float:
+    return metres * 1000 / MM_PER_PT_AT_1_100
+
+
+def _draw_band(page, origin, seg: DuctSegment, half_mm: float, width: float = 0.5) -> None:
+    ox, oy = origin
+    ax, ay = ox + _to_points(seg.start[0]), oy + _to_points(seg.start[1])
+    bx, by = ox + _to_points(seg.end[0]), oy + _to_points(seg.end[1])
+    length = math.hypot(bx - ax, by - ay)
+    ux, uy = (bx - ax) / length, (by - ay) / length
+    nx, ny = -uy, ux
+    half = half_mm / MM_PER_PT_AT_1_100
+    for sign in (1, -1):
+        page.draw_line((ax + nx * half * sign, ay + ny * half * sign),
+                       (bx + nx * half * sign, by + ny * half * sign),
+                       color=seg.colour, width=width)
+
+
+def make_duct_plan_pdf(path: str | Path, segments: list[DuctSegment],
+                       callouts: list[tuple[tuple[float, float], list[str], tuple[float, float]]]
+                       | None = None,
+                       origin: tuple[float, float] = (60.0, 60.0)) -> None:
+    """Draw ducts at 1:100 plus optional leader callouts.
+
+    `callouts` entries are (text anchor in points, stacked lines, target point
+    in metres) - the leader runs from the end of the rule to the target.
+    """
+    doc = pymupdf.open()
+    page = doc.new_page(width=1200, height=850)
+    page.insert_font(fontname=FONT, fontfile=_font_file())
+    ox, oy = origin
+
+    for seg in segments:
+        _draw_band(page, origin, seg, seg.width_mm / 2)
+        if seg.insulated:
+            _draw_band(page, origin, seg, seg.width_mm / 2 + seg.insulation_mm, width=0.4)
+            ax, ay = ox + _to_points(seg.start[0]), oy + _to_points(seg.start[1])
+            bx, by = ox + _to_points(seg.end[0]), oy + _to_points(seg.end[1])
+            length = math.hypot(bx - ax, by - ay)
+            ux, uy = (bx - ax) / length, (by - ay) / length
+            nx, ny = -uy, ux
+            half = seg.width_mm / 2 / MM_PER_PT_AT_1_100
+            pitch = 8.0
+            steps = int((length - 2 * half) // pitch)
+            for i in range(steps):
+                t = half + i * pitch
+                grow = 1.0 + seg.hatch_jitter * (i % 5) / 4.0
+                for direction in (1, -1):
+                    sx = ax + ux * t - nx * half
+                    sy = ay + uy * t - ny * half
+                    ex = ax + ux * (t + direction * 2 * half * grow) + nx * half * grow
+                    ey = ay + uy * (t + direction * 2 * half * grow) + ny * half * grow
+                    page.draw_line((sx, sy), (ex, ey), color=seg.colour, width=0.4)
+        if seg.axis:
+            ax, ay = ox + _to_points(seg.start[0]), oy + _to_points(seg.start[1])
+            bx, by = ox + _to_points(seg.end[0]), oy + _to_points(seg.end[1])
+            total = math.hypot(bx - ax, by - ay)
+            ux, uy = (bx - ax) / total, (by - ay) / total
+            t = 0.0
+            while t < total:
+                for run in (9.0, 2.0):          # long dash, then a dot
+                    end = min(t + run, total)
+                    page.draw_line((ax + ux * t, ay + uy * t), (ax + ux * end, ay + uy * end),
+                                   color=seg.colour, width=0.4)
+                    t = end + 3.0
+
+    for anchor, lines, target in callouts or []:
+        tx, ty = anchor
+        for i, line in enumerate(lines):
+            page.insert_text((tx, ty + 11 * i), line, fontsize=9, fontname=FONT)
+        rule_y = ty + 11 * (len(lines) - 1) + 3
+        rule_x1 = tx + 70
+        page.draw_line((tx - 2, rule_y), (rule_x1, rule_y), color=(0, 0, 0), width=0.5)
+        page.draw_line((rule_x1, rule_y),
+                       (ox + _to_points(target[0]), oy + _to_points(target[1])),
+                       color=(0, 0, 0), width=0.5)
+    doc.save(str(path))
+    doc.close()
