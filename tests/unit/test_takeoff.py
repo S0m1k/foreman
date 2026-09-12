@@ -219,6 +219,28 @@ class TestCallouts:
         targets = {(round(x), round(y)) for _, _, x, y in found}
         assert len(targets) == 1, "both lines must resolve to the same duct"
 
+    def test_grille_face_size_is_not_read_as_a_duct_section(self, tmp_path):
+        """"АМР 400x200" names a grille's own face, not the duct it sits on -
+        and a grille's face commonly matches the spigot it's mounted on, so
+        the downstream width-match sanity check cannot catch this either. On
+        sheet 6, 57 of 151 grille sizes slipped through undetected this way."""
+        page = plan(
+            tmp_path,
+            [DuctSegment((0, 0), (10, 0), 400, BLUE)],
+            callouts=[((500.0, 300.0), ["АМР 400x200"], (5.0, 0.0))],
+        )
+        found = leaders(page)
+        assert not any(kind == "size" for kind, *_ in found)
+
+    def test_a_genuine_duct_size_survives_without_a_grille_label(self, tmp_path):
+        page = plan(
+            tmp_path,
+            [DuctSegment((0, 0), (10, 0), 400, BLUE)],
+            callouts=[((500.0, 300.0), ["400x200"], (5.0, 0.0))],
+        )
+        found = leaders(page)
+        assert any(kind == "size" and text == "400x200" for kind, text, _, _ in found)
+
     def test_leader_does_not_cross_over_to_a_wider_duct_of_another_family(self):
         """Once a leader's endpoint lands inside a band, distance-to-wall
         clamps to zero - a wide duct passing nearby then ties a slim one and,

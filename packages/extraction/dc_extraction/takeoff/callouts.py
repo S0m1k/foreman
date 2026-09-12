@@ -8,10 +8,17 @@ polyline running from one end of that rule to the duct it describes:
     ─────────╲
                ╲──▶ duct
 
-Typography does the typing for us. On these sheets a size written with a
-Cyrillic "х" belongs to a grille or damper mark (АМР 400х200) and one written
-with a Latin "x" is a duct section - checked on sheet 6: 113 of 116 Cyrillic
-spellings sit next to an equipment mark, and none of the 136 Latin ones do.
+A grille or damper is labelled the same size-shaped way as a duct - "АМР
+400х200" reads, to a regex, exactly like a duct section. That size is real
+(it is the grille's own face), just not the duct's: a grille's face commonly
+matches the spigot it sits on, so a naive width-match sanity check does not
+catch it either - on sheet 6, 57 of 151 grille sizes that reach a leader
+target slip through undetected and would silently overwrite that duct's true
+section. What actually distinguishes them is not the Cyrillic "х" some of
+them happen to use (a few genuine duct sections are typed with it too, most
+likely by inconsistent hand-entry) but where they sit: a grille's size is
+written immediately after its own label (АМР/АДР/АДР-К/АРН/Рс) on the same
+line, a duct's is not.
 """
 
 from __future__ import annotations
@@ -26,6 +33,10 @@ from .geometry import PT_TO_MM_AT_1_1, DuctRun
 
 SIZE_RE = re.compile(r"^([⌀øØФф]\s?\d{2,4}|\d{2,4}\s?[xх×]\s?\d{2,4})$")
 SYSTEM_RE = re.compile(r"^(В|П|ДВ|ПД|ДП)\d+(\.\d+)?[аб]?$")
+# A grille/damper label a size is written right after, on the same line -
+# "АМР 400х200" - naming the fitting's own face, not the duct it sits on.
+GRILLE_LABEL_RE = re.compile(r"^(АМР|АДР(-К)?|АРН|Рс)$")
+_GRILLE_LABEL_GAP = 25.0
 EQUIPMENT_RE = re.compile(
     r"(КЛАПЪ-\(\d+\)-Н[ОЗ]\(?C?\)?-\d+x\d+|АДР[ -][\dхx]+|АРН[ -][\dхx]+|АМР[ -][\dхx]+)"
 )
@@ -122,11 +133,23 @@ def leaders(page: pymupdf.Page) -> list[tuple[str, str, float, float]]:
             return "system"
         return None
 
+    def names_a_grille(word) -> bool:
+        """Is `word` a size sitting right after a grille/damper label?"""
+        for other in words:
+            if other is word or abs(other[1] - word[1]) > 1.0:
+                continue
+            gap = word[0] - other[2]
+            if 0 <= gap < _GRILLE_LABEL_GAP and GRILLE_LABEL_RE.match(other[4]):
+                return True
+        return False
+
     out: list[tuple[str, str, float, float]] = []
     for word in words:
         kind = classify(word[4])
         if kind is None:
             continue
+        if kind == "size" and names_a_grille(word):
+            continue  # this size is the grille's own face, not the duct's
         x0, y0, x1, y1 = word[0], word[1], word[2], word[3]
         rule = None
         for ax, ay, bx, by in black:
@@ -151,6 +174,8 @@ def leaders(page: pymupdf.Page) -> list[tuple[str, str, float, float]]:
         for other in stacked_above(word):
             other_kind = classify(other[4])
             if other_kind is None:
+                continue
+            if other_kind == "size" and names_a_grille(other):
                 continue
             text = normalise_size(other[4]) if other_kind == "size" else other[4]
             out.append((other_kind, text, far[0], far[1]))
