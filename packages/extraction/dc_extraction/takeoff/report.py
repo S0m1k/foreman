@@ -34,3 +34,53 @@ def write_ru_csv(path: str | Path, header: list[str], rows: list[list[Any]],
         for row in rows:
             writer.writerow([_cell(v, decimals) for v in row])
     return path
+
+
+_DECIMAL_FORMAT = "0.0"
+_MAX_COLUMN_WIDTH = 60
+
+
+def write_xlsx(path: str | Path, title: str, header: list[str], rows: list[list[Any]],
+               total_columns: list[str] | None = None) -> Path:
+    """Write a one-sheet workbook with real numeric cells.
+
+    Unlike the CSV, no locale guessing is involved: floats are stored as
+    numbers, and `total_columns` get a trailing `=SUM()` row so the estimator
+    can edit a figure and see the total follow.
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    from openpyxl.utils import get_column_letter
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = title[:31]  # Excel's sheet-name limit
+
+    sheet.append(header)
+    for row in rows:
+        sheet.append([("Да" if v else "Нет") if isinstance(v, bool) else v for v in row])
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
+    sheet.freeze_panes = "A2"
+
+    last = len(rows) + 1
+    if total_columns and rows:
+        total_row = last + 1
+        sheet.cell(row=total_row, column=1, value="Итого").font = Font(bold=True)
+        for name in total_columns:
+            letter = get_column_letter(header.index(name) + 1)
+            cell = sheet[f"{letter}{total_row}"]
+            cell.value = f"=SUM({letter}2:{letter}{last})"
+            cell.font = Font(bold=True)
+
+    for column in sheet.columns:
+        for cell in column:
+            if isinstance(cell.value, float):
+                cell.number_format = _DECIMAL_FORMAT
+        widest = max(len(str(c.value)) for c in column if c.value is not None)
+        sheet.column_dimensions[column[0].column_letter].width = min(widest + 2,
+                                                                    _MAX_COLUMN_WIDTH)
+    workbook.save(path)
+    return path

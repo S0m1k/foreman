@@ -26,6 +26,7 @@ from dc_extraction.takeoff import (  # noqa: E402
     size_dimensions,
     snap_width,
     write_ru_csv,
+    write_xlsx,
 )
 from dc_extraction.takeoff.callouts import (  # noqa: E402
     EQUIPMENT_RE,
@@ -286,6 +287,39 @@ class TestRuCsv:
         out = write_ru_csv(tmp_path / "r.csv", ["A", "B"], [[1.0, 2.0]])
         first_row = out.read_text(encoding="utf-8-sig").splitlines()[0]
         assert first_row == "A;B"
+
+
+class TestXlsx:
+    """The estimator's deliverable is a workbook: numbers must be numbers (so
+    SUM works) and the totals row must be a live formula, not a pasted value."""
+
+    def _open(self, path):
+        import openpyxl
+        return openpyxl.load_workbook(path)
+
+    def test_numbers_stay_numeric(self, tmp_path):
+        out = write_xlsx(tmp_path / "t.xlsx", "Ведомость", ["Система", "Длина, м"],
+                         [["В1", 154.4], ["В2", 0.0]])
+        ws = self._open(out)["Ведомость"]
+        assert ws["A1"].value == "Система"
+        assert ws["B2"].value == 154.4 and isinstance(ws["B2"].value, float)
+
+    def test_totals_row_is_a_sum_formula(self, tmp_path):
+        out = write_xlsx(tmp_path / "t.xlsx", "Ведомость", ["Система", "Длина, м"],
+                         [["В1", 1.5], ["В2", 2.5]], total_columns=["Длина, м"])
+        ws = self._open(out)["Ведомость"]
+        assert ws["A4"].value == "Итого"
+        assert ws["B4"].value == "=SUM(B2:B3)"
+
+    def test_booleans_become_words_and_header_is_frozen(self, tmp_path):
+        out = write_xlsx(tmp_path / "t.xlsx", "S", ["Изоляция"], [[True], [False]])
+        ws = self._open(out)["S"]
+        assert [ws["A2"].value, ws["A3"].value] == ["Да", "Нет"]
+        assert ws.freeze_panes == "A2"
+
+    def test_creates_missing_directories(self, tmp_path):
+        out = write_xlsx(tmp_path / "a" / "b" / "t.xlsx", "S", ["A"], [[1]])
+        assert out.exists()
 
 
 class TestWidthSnapping:

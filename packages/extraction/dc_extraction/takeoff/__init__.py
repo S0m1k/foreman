@@ -19,7 +19,7 @@ from .pipeline import (
     totals_by_system,
 )
 from .qa import overlay
-from .report import write_ru_csv
+from .report import write_ru_csv, write_xlsx
 from .spec import SpecSystem, parse_specification, unique_equipment
 
 __all__ = [
@@ -49,4 +49,5 @@ __all__ = [
     "totals_by_system",
     "unique_equipment",
     "write_ru_csv",
+    "write_xlsx",
 ]
