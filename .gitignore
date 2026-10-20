@@ -10,3 +10,5 @@ node_modules/
 next-env.d.ts
 *.tsbuildinfo
 *.egg-info/
+
+.chrome-rea/
