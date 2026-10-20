@@ -517,6 +517,32 @@ def detect_scale(page: pymupdf.Page, palette=None, candidates=(100, 50, 200)) ->
     return best
 
 
+STRETCH_SPAN = 2.0  # pt of centreline offset one collinear stretch may cover
+
+
+def _stretches(groups):
+    """Split each same-angle group into collinear stretches of bounded spread.
+
+    A wall paired with the outer face of the insulation on the opposite side
+    gives a band whose centreline sits a fraction of a point off the duct's.
+    Bucketing offsets by rounding put that band in the neighbouring bucket
+    whenever the duct's centreline fell near a bucket edge, so the same duct
+    was counted twice depending only on where it sat on the sheet. Anchoring
+    each stretch on its first offset keeps the old bucket width without the
+    edges; chaining neighbour to neighbour instead would let a run of close
+    offsets glue genuinely different ducts together.
+    """
+    for members in groups:
+        ordered = sorted(members, key=lambda m: m[5])
+        stretch = [ordered[0]]
+        for member in ordered[1:]:
+            if member[5] - stretch[0][5] > STRETCH_SPAN:
+                yield stretch
+                stretch = []
+            stretch.append(member)
+        yield stretch
+
+
 def centrelines(page: pymupdf.Page, scale: int = 100, palette=None) -> list[DuctRun]:
     """Measure every duct run on the page."""
     palette = palette or DEFAULT_PALETTE
@@ -566,7 +592,7 @@ def centrelines(page: pymupdf.Page, scale: int = 100, palette=None) -> list[Duct
 
         # An insulated duct carries two concentric outlines; sweep each
         # collinear stretch and keep only the narrower (the duct itself).
-        stretches: dict[tuple[int, int], list[tuple]] = collections.defaultdict(list)
+        by_angle: dict[int, list[tuple]] = collections.defaultdict(list)
         for width, line, _ in pairs.values():
             x0, y0, x1, y1 = line
             angle = math.atan2(y1 - y0, x1 - x0) % math.pi
@@ -574,10 +600,10 @@ def centrelines(page: pymupdf.Page, scale: int = 100, palette=None) -> list[Duct
             nx, ny = -uy, ux
             t0, t1 = sorted((x0 * ux + y0 * uy, x1 * ux + y1 * uy))
             off = x0 * nx + y0 * ny
-            stretches[(round(angle / 0.02), round(off / 2.0))].append(
+            by_angle[round(angle / 0.02)].append(
                 (t0, t1, width, is_insulated(line, width), angle, off))
 
-        for members in stretches.values():
+        for members in _stretches(by_angle.values()):
             events = []
             for t0, t1, width, insulated, angle, off in members:
                 events.append((t0, 1, width, insulated, angle, off))

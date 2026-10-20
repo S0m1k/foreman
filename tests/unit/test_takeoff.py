@@ -93,11 +93,20 @@ class TestMeasurement:
         runs = centrelines(page, scale=100)
         assert not max(runs, key=lambda r: r.length_m).insulated
 
-    def test_insulated_duct_is_counted_once(self, tmp_path):
+    @pytest.mark.parametrize("start, end", [
+        ((0, 0), (12, 0)),
+        # the same duct elsewhere on the sheet once surfaced a second run 20 mm
+        # wider (inner wall of one side paired with the outer face of the other)
+        ((0, 3), (12, 3)),
+        ((0, 9), (12, 9)),
+        ((8, 0), (8, 12)),
+    ])
+    def test_insulated_duct_is_counted_once(self, tmp_path, start, end):
         """Two concentric outlines are one duct, not two."""
-        page = plan(tmp_path, [DuctSegment((0, 0), (12, 0), 600, RED, insulated=True)])
-        total = sum(r.length_m for r in centrelines(page, scale=100))
-        assert total == pytest.approx(12.0, abs=1.0)
+        page = plan(tmp_path, [DuctSegment(start, end, 600, RED, insulated=True)])
+        runs = centrelines(page, scale=100)
+        assert sum(r.length_m for r in runs) == pytest.approx(12.0, abs=1.0)
+        assert len(runs) == 1
 
 
 class TestDrawingArtefacts:
