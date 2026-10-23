@@ -1,19 +1,10 @@
-import data from "@/data/demo-sheet.json";
+import type { TakeoffRun, TakeoffSheet } from "@/lib/api";
 
-export type Run = (typeof data.runs)[number];
-export type SystemName = "П1" | "В1" | "ДВ1";
-export const SYSTEMS: SystemName[] = ["П1", "В1", "ДВ1"];
 export const EXCLUDED = "excluded";
 export const UNKNOWN = "не определено";
 
-export const SYSTEM_COLOUR: Record<string, string> = {
-  П1: "#f0564a",
-  В1: "#6aa9ff",
-  ДВ1: "#3ecf8e",
-  [UNKNOWN]: "#8b98a5",
-};
-
-export type Overrides = Readonly<Record<number, string>>;
+// run id (as a string, the way the API keys it) -> system | "excluded"
+export type Overrides = Readonly<Record<string, string>>;
 
 export interface Group {
   key: string;
@@ -26,22 +17,43 @@ export interface Group {
 
 export interface SystemSummary {
   system: string;
-  measuredM: number;
+  sheetM: number;
+  // this sheet plus every other plan sheet of the project, edits applied
+  projectM: number;
   specM: number | null;
   groups: Group[];
 }
 
-export const sheet = data;
+const FAMILY_RE = /^(ДВ|ПД|ДП|В|П)/;
+// supply red, extract blue, smoke exhaust green, smoke supply orange
+const FAMILY_HUE: Record<string, number> = { П: 4, В: 214, ДВ: 145, ПД: 30, ДП: 280 };
 
-export function effectiveSystem(run: Run, overrides: Overrides): string {
-  return overrides[run.id] ?? run.system ?? UNKNOWN;
+export function family(system: string): string | null {
+  return FAMILY_RE.exec(system)?.[1] ?? null;
 }
 
-export function sectionLabel(run: Run): string {
-  return run.section ?? (run.widthMm ? `${run.widthMm}x?` : "?");
+/** One hue per family, a lightness per system, so В1 and В2 stay tellable apart. */
+export function systemColour(system: string): string {
+  const fam = family(system);
+  if (system === EXCLUDED || fam === null) return "#8b98a5";
+  let hash = 0;
+  for (const char of system) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  const lightness = 48 + (hash % 5) * 6;
+  return `hsl(${FAMILY_HUE[fam]} 78% ${lightness}%)`;
 }
 
-export function summarise(overrides: Overrides): SystemSummary[] {
+export const naturalOrder = (a: string, b: string) =>
+  a.localeCompare(b, "ru", { numeric: true });
+
+export function effectiveSystem(run: TakeoffRun, overrides: Overrides): string {
+  return overrides[String(run.id)] ?? run.system ?? UNKNOWN;
+}
+
+export function sectionLabel(run: TakeoffRun): string {
+  return run.section ?? (run.width_mm ? `${run.width_mm}x?` : "?");
+}
+
+function groupRuns(sheet: TakeoffSheet, overrides: Overrides): Map<string, Group> {
   const groups = new Map<string, Group>();
   for (const run of sheet.runs) {
     const system = effectiveSystem(run, overrides);
@@ -54,27 +66,69 @@ export function summarise(overrides: Overrides): SystemSummary[] {
       system,
       section,
       insulated: run.insulated,
-      lengthM: (prev?.lengthM ?? 0) + run.lengthM,
+      lengthM: (prev?.lengthM ?? 0) + run.length_m,
       runIds: [...(prev?.runIds ?? []), run.id],
     });
   }
-  const spec = sheet.specM as Record<string, number>;
-  const names = [...SYSTEMS, UNKNOWN].filter(
-    (name) => name !== UNKNOWN || [...groups.values()].some((g) => g.system === name),
+  return groups;
+}
+
+export function summarise(sheet: TakeoffSheet, overrides: Overrides): SystemSummary[] {
+  const groups = [...groupRuns(sheet, overrides).values()];
+  const systems = [...new Set(groups.map((g) => g.system))].sort((a, b) =>
+    a === UNKNOWN ? 1 : b === UNKNOWN ? -1 : naturalOrder(a, b),
   );
-  return names.map((system) => {
-    const own = [...groups.values()].filter((g) => g.system === system);
+  return systems.map((system) => {
+    const own = groups
+      .filter((g) => g.system === system)
+      .sort((a, b) => b.lengthM - a.lengthM);
+    const sheetM = own.reduce((sum, g) => sum + g.lengthM, 0);
     return {
       system,
-      measuredM: own.reduce((sum, g) => sum + g.lengthM, 0),
-      specM: spec[system] ?? null,
-      groups: own.sort((a, b) => b.lengthM - a.lengthM),
+      sheetM,
+      projectM: (sheet.other_sheets_m[system] ?? 0) + sheetM,
+      specM: sheet.spec_m[system] ?? null,
+      groups: own,
     };
   });
 }
 
+/** Systems a group may be moved to: the spec's systems of its own family. */
+export function moveTargets(sheet: TakeoffSheet, current: string): string[] {
+  const fam = family(current);
+  const names = new Set([
+    ...Object.keys(sheet.spec_m),
+    ...sheet.runs.map((r) => r.system).filter((s): s is string => Boolean(s)),
+  ]);
+  return [...names]
+    .filter((name) => name !== current && (fam === null || family(name) === fam))
+    .sort(naturalOrder);
+}
+
 const fmt = (value: number) => value.toFixed(1).replace(".", ",");
 export const formatM = fmt;
+
+const SPEC_TOLERANCE = 0.03;
+
+export type Verdict = { label: string; tone: string; isOver: boolean };
+
+/**
+ * The specification covers the whole building, so it is a ceiling for the
+ * project total, not a target for one sheet: going over it is an error, falling
+ * short only means the rest is drawn on sheets not measured yet.
+ */
+export function verdict(projectM: number, specM: number | null): Verdict {
+  // 0 m means the system is specified (its equipment is) but none of its ducts are
+  if (specM === null || specM === 0) {
+    return { label: "нет в спецификации", tone: "chip-medium", isOver: false };
+  }
+  const delta = projectM - specM;
+  if (Math.abs(delta) <= specM * SPEC_TOLERANCE) {
+    return { label: "сходится", tone: "chip-ok", isOver: false };
+  }
+  if (delta > 0) return { label: `+${fmt(delta)} м сверх`, tone: "chip-high", isOver: true };
+  return { label: `ещё ${fmt(-delta)} м`, tone: "chip-low", isOver: false };
+}
 
 export function toRuCsv(summary: SystemSummary[]): string {
   const lines = ["Система;Сечение;Изоляция;Длина, м"];

@@ -24,6 +24,14 @@ export default function RootLayout({
                 AI drawing checker
               </span>
             </Link>
+            <nav className="ml-auto flex items-center gap-5 text-sm">
+              <Link href="/" className="text-[var(--muted)] hover:text-[var(--text)]">
+                Проверки
+              </Link>
+              <Link href="/takeoff/new" className="text-[var(--muted)] hover:text-[var(--text)]">
+                Ведомость воздуховодов
+              </Link>
+            </nav>
           </div>
         </header>
         <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>

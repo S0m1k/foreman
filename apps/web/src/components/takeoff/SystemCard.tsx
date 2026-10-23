@@ -1,36 +1,27 @@
 import {
   EXCLUDED,
-  SYSTEMS,
-  SYSTEM_COLOUR,
   UNKNOWN,
   formatM,
-  sheet,
+  systemColour,
+  verdict,
   type Group,
   type SystemSummary,
 } from "./model";
 
 interface Props {
   summary: SystemSummary;
+  targets: string[];
   selectedKey: string | null;
   onSelect: (group: Group | null) => void;
   onMove: (group: Group, target: string) => void;
 }
 
-const TOLERANCE = 0.03;
-
-function verdict(measured: number, spec: number | null) {
-  if (spec === null) return { label: "нет в спецификации", tone: "chip-low" };
-  const delta = measured - spec;
-  if (Math.abs(delta) <= spec * TOLERANCE) return { label: "сходится", tone: "chip-ok" };
-  if (delta > 0) return { label: `+${formatM(delta)} м сверх`, tone: "chip-high" };
-  return { label: `${formatM(delta)} м недобор`, tone: "chip-medium" };
-}
-
-export function SystemCard({ summary, selectedKey, onSelect, onMove }: Props) {
-  const colour = SYSTEM_COLOUR[summary.system];
-  const v = verdict(summary.measuredM, summary.specM);
-  const scaleMax = Math.max(summary.measuredM, summary.specM ?? 0, 1) * 1.12;
-  const measuredPct = (summary.measuredM / scaleMax) * 100;
+export function SystemCard({ summary, targets, selectedKey, onSelect, onMove }: Props) {
+  const colour = systemColour(summary.system);
+  const v = verdict(summary.projectM, summary.specM);
+  const scaleMax = Math.max(summary.projectM, summary.specM ?? 0, 1) * 1.08;
+  const otherPct = ((summary.projectM - summary.sheetM) / scaleMax) * 100;
+  const sheetPct = (summary.sheetM / scaleMax) * 100;
   const specPct = summary.specM === null ? null : (summary.specM / scaleMax) * 100;
 
   return (
@@ -40,21 +31,27 @@ export function SystemCard({ summary, selectedKey, onSelect, onMove }: Props) {
           <h3 className="mono text-lg font-bold" style={{ color: colour }}>
             {summary.system}
           </h3>
-          <span className="mono text-sm">{formatM(summary.measuredM)} м</span>
-          <span className="text-xs text-[var(--muted)]">
-            по спец.{" "}
-            <span className="mono">{summary.specM === null ? "—" : `${formatM(summary.specM)} м`}</span>
+          <span className="mono text-sm" title="Длина на этом листе">
+            {formatM(summary.sheetM)} м
           </span>
           <span className={`chip ${v.tone} ml-auto`}>{v.label}</span>
         </div>
-        <div className="relative mt-2.5 h-1.5 rounded-full bg-[var(--surface-2)]" aria-hidden>
-          <div className="h-full rounded-full" style={{ width: `${measuredPct}%`, background: colour }} />
+        <p className="text-xs text-[var(--muted)] mt-1">
+          по проекту <span className="mono">{formatM(summary.projectM)}</span>
+          {summary.specM !== null && (
+            <>
+              {" "}из <span className="mono">{formatM(summary.specM)} м</span> по спецификации
+            </>
+          )}
+        </p>
+        <div className="relative mt-2 h-1.5 rounded-full bg-[var(--surface-2)] flex" aria-hidden>
+          <div className="h-full rounded-l-full opacity-40" style={{ width: `${otherPct}%`, background: colour }}
+               title="На других листах" />
+          <div className="h-full" style={{ width: `${sheetPct}%`, background: colour }}
+               title="На этом листе" />
           {specPct !== null && (
-            <div
-              className="absolute -top-1 h-3.5 w-0.5 bg-[var(--text)]"
-              style={{ left: `${specPct}%` }}
-              title="Лимит по спецификации"
-            />
+            <div className="absolute -top-1 h-3.5 w-0.5 bg-[var(--text)]" style={{ left: `${specPct}%` }}
+                 title="Лимит по спецификации" />
           )}
         </div>
       </header>
@@ -80,10 +77,10 @@ export function SystemCard({ summary, selectedKey, onSelect, onMove }: Props) {
                 value=""
                 onClick={(e) => e.stopPropagation()}
                 onChange={(e) => e.target.value && onMove(g, e.target.value)}
-                className="mono text-xs bg-transparent border border-[var(--line)] rounded px-1 py-0.5 text-[var(--muted)]"
+                className="mono text-xs bg-transparent border border-[var(--line)] rounded px-1 py-0.5 text-[var(--muted)] max-w-20"
               >
                 <option value="">⇄</option>
-                {SYSTEMS.filter((s) => s !== g.system).map((s) => (
+                {targets.map((s) => (
                   <option key={s} value={s}>
                     → {s}
                   </option>
@@ -100,8 +97,3 @@ export function SystemCard({ summary, selectedKey, onSelect, onMove }: Props) {
     </article>
   );
 }
-
-export const specTotal = Object.values(sheet.specM as Record<string, number>).reduce(
-  (a, b) => a + b,
-  0,
-);

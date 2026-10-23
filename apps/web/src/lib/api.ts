@@ -122,7 +122,89 @@ export const api = {
     request<Finding>(`/api/findings/${id}/confirm`, { method: "POST" }),
   falsePositive: (id: string) =>
     request<Finding>(`/api/findings/${id}/false-positive`, { method: "POST" }),
+  startTakeoff: (projectId: string) =>
+    request<Takeoff>(`/api/projects/${projectId}/takeoff`, { method: "POST" }),
+  getTakeoff: (projectId: string) =>
+    request<Takeoff>(`/api/projects/${projectId}/takeoff`),
+  getTakeoffSheet: (takeoffId: string, documentId: string, page: number) =>
+    request<TakeoffSheet>(`/api/takeoffs/${takeoffId}/sheets/${documentId}/${page}`),
+  saveTakeoffOverrides: (
+    takeoffId: string,
+    documentId: string,
+    page: number,
+    overrides: Record<string, string>,
+  ) =>
+    request<TakeoffSheet>(
+      `/api/takeoffs/${takeoffId}/sheets/${documentId}/${page}/overrides`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ overrides }),
+      },
+    ),
 };
+
+export type SheetKind = "plan" | "schematic" | "specification" | "other";
+
+export type TakeoffSheetSummary = {
+  document_id: string;
+  filename: string;
+  page: number;
+  kind: SheetKind;
+  title: string | null;
+  scale: number | null;
+  run_count: number;
+  length_m: number;
+};
+
+export type SystemTotal = {
+  system: string;
+  measured_m: number;
+  spec_m: number | null;
+};
+
+export type Takeoff = {
+  id: string;
+  project_id: string;
+  status: "RUNNING" | "COMPLETED" | "FAILED";
+  error?: string | null;
+  progress?: { step: "classify" | "spec" | "measure"; done: number; total: number; document?: string | null } | null;
+  sheets: TakeoffSheetSummary[];
+  systems: SystemTotal[];
+};
+
+export type TakeoffRun = {
+  id: number;
+  system: string | null;
+  confidence: string;
+  section: string | null;
+  width_mm: number | null;
+  insulated: boolean;
+  length_m: number;
+  p0: number[];
+  p1: number[];
+};
+
+export type TakeoffSheet = {
+  takeoff_id: string;
+  document_id: string;
+  filename: string;
+  page: number;
+  title: string | null;
+  scale: number | null;
+  width: number;
+  height: number;
+  image_url: string;
+  runs: TakeoffRun[];
+  overrides: Record<string, string>;
+  spec_m: Record<string, number>;
+  other_sheets_m: Record<string, number>;
+};
+
+export const takeoffExportUrl = (takeoffId: string) =>
+  `${API_BASE}/api/takeoffs/${takeoffId}/export.xlsx`;
+
+export const apiUrl = (path: string) => `${API_BASE}${path}`;
 
 export const evidenceImageUrl = (findingId: string, side: "drawing" | "spec") =>
   `${API_BASE}/api/findings/${findingId}/evidence/${side}.png`;

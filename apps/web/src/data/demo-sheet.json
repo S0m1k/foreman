@@ -1,24 +1,22 @@
 {
- "file": "demo_plan_OV.pdf",
+ "takeoff_id": "demo",
+ "document_id": "demo",
+ "filename": "demo_album_OV.pdf",
  "page": 1,
- "pages": 1,
+ "title": "План 1 этажа",
  "scale": 100,
  "width": 1200.0,
  "height": 850.0,
- "specM": {
-  "П1": 16.0,
-  "В1": 19.5,
-  "ДВ1": 10.0
- },
+ "image_url": "/demo/sheet-1.svg",
  "runs": [
   {
    "id": 0,
    "system": "П1",
    "confidence": "callout",
    "section": "600x350",
-   "widthMm": 600,
+   "width_mm": 600,
    "insulated": true,
-   "lengthM": 12.0,
+   "length_m": 12.0,
    "p0": [
     60.0,
     60.0
@@ -33,9 +31,9 @@
    "system": "П1",
    "confidence": "callout",
    "section": null,
-   "widthMm": 400,
+   "width_mm": 400,
    "insulated": true,
-   "lengthM": 5.0,
+   "length_m": 5.0,
    "p0": [
     286.8,
     60.0
@@ -50,9 +48,9 @@
    "system": "В1",
    "confidence": "callout",
    "section": "600x350",
-   "widthMm": 600,
+   "width_mm": 600,
    "insulated": false,
-   "lengthM": 14.0,
+   "length_m": 14.0,
    "p0": [
     60.0,
     315.1
@@ -67,9 +65,9 @@
    "system": "В1",
    "confidence": "callout",
    "section": null,
-   "widthMm": 400,
+   "width_mm": 400,
    "insulated": false,
-   "lengthM": 5.0,
+   "length_m": 5.0,
    "p0": [
     230.1,
     315.1
@@ -84,9 +82,9 @@
    "system": "ДВ1",
    "confidence": "callout",
    "section": "800x500",
-   "widthMm": 800,
+   "width_mm": 800,
    "insulated": false,
-   "lengthM": 10.0,
+   "length_m": 10.0,
    "p0": [
     513.5,
     116.7
@@ -96,5 +94,12 @@
     400.2
    ]
   }
- ]
+ ],
+ "overrides": {},
+ "spec_m": {
+  "П1": 16.0,
+  "В1": 19.5,
+  "ДВ1": 10.0
+ },
+ "other_sheets_m": {}
 }

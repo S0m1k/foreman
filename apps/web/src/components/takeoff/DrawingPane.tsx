@@ -1,25 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import {
-  EXCLUDED,
-  SYSTEM_COLOUR,
-  UNKNOWN,
-  effectiveSystem,
-  sheet,
-  type Overrides,
-} from "./model";
+import type { TakeoffSheet } from "@/lib/api";
+import { EXCLUDED, effectiveSystem, systemColour, type Overrides } from "./model";
 
 interface Props {
+  sheet: TakeoffSheet;
+  imageUrl: string;
   overrides: Overrides;
   highlighted: ReadonlySet<number>;
   onHover: (runId: number | null) => void;
   onPick: (runId: number) => void;
 }
 
-const ZOOMS = [1, 1.5, 2, 3];
+// A full-size plan is ~5000 pt wide; 800% is what it takes to read a callout.
+const ZOOMS = [1, 2, 4, 8];
 
-export function DrawingPane({ overrides, highlighted, onHover, onPick }: Props) {
+export function DrawingPane({ sheet, imageUrl, overrides, highlighted, onHover, onPick }: Props) {
   const [zoom, setZoom] = useState(1);
   const dim = highlighted.size > 0;
 
@@ -50,36 +47,30 @@ export function DrawingPane({ overrides, highlighted, onHover, onPick }: Props) 
           aria-label="План ОВ с размеченными воздуховодами"
         >
           <rect width={sheet.width} height={sheet.height} fill="#f4f1ea" />
-          <image href="/demo/sheet-1.svg" width={sheet.width} height={sheet.height} opacity={0.55} />
+          <image href={imageUrl} width={sheet.width} height={sheet.height} opacity={0.55} />
           {sheet.runs.map((run) => {
             const system = effectiveSystem(run, overrides);
             const excluded = system === EXCLUDED;
             const on = highlighted.has(run.id);
-            const colour = excluded ? "#9aa5b1" : SYSTEM_COLOUR[system] ?? SYSTEM_COLOUR[UNKNOWN];
-            const opacity = excluded ? 0.35 : dim && !on ? 0.28 : 1;
+            const colour = systemColour(system);
+            const opacity = excluded ? 0.35 : dim && !on ? 0.25 : 1;
             const [x1, y1] = run.p0;
             const [x2, y2] = run.p1;
+            const line = { x1, y1, x2, y2, strokeLinecap: "round" as const };
             return (
               <g key={run.id} opacity={opacity}>
                 {on && (
-                  <line
-                    x1={x1} y1={y1} x2={x2} y2={y2}
-                    stroke={colour} strokeWidth={16} strokeLinecap="round" opacity={0.28}
-                  />
+                  <line {...line} stroke={colour} strokeWidth={14} opacity={0.3}
+                        vectorEffect="non-scaling-stroke" />
                 )}
-                <line
-                  x1={x1} y1={y1} x2={x2} y2={y2}
-                  stroke={colour} strokeWidth={on ? 6 : 4} strokeLinecap="round"
-                  strokeDasharray={excluded ? "2 8" : undefined}
-                />
-                <line
-                  x1={x1} y1={y1} x2={x2} y2={y2}
-                  stroke="transparent" strokeWidth={22} strokeLinecap="round"
-                  className="cursor-pointer"
-                  onMouseEnter={() => onHover(run.id)}
-                  onMouseLeave={() => onHover(null)}
-                  onClick={() => onPick(run.id)}
-                />
+                <line {...line} stroke={colour} strokeWidth={on ? 5 : 3}
+                      strokeDasharray={excluded ? "2 6" : undefined}
+                      vectorEffect="non-scaling-stroke" />
+                <line {...line} stroke="transparent" strokeWidth={16}
+                      vectorEffect="non-scaling-stroke" className="cursor-pointer"
+                      onMouseEnter={() => onHover(run.id)}
+                      onMouseLeave={() => onHover(null)}
+                      onClick={() => onPick(run.id)} />
               </g>
             );
           })}
