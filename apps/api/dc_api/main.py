@@ -31,6 +31,7 @@ from .schemas_api import (
 )
 from .settings import settings
 from .storage import document_key, get_storage
+from .takeoff_routes import router as takeoff_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -45,6 +46,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(takeoff_router)
 
 
 @app.on_event("startup")
@@ -376,6 +378,31 @@ def false_positive_finding(finding_id: str, session: Session = Depends(get_sessi
 # --- evidence images -------------------------------------------------------
 
 
+def _fitted_page(document: Document, page_number: int, max_side: int) -> bytes:
+    """A display-sized page image, rendered once and kept in storage."""
+    from dc_pdf import render_page_fit
+
+    from .storage import page_image_key
+
+    storage = get_storage()
+    key = page_image_key(document.project_id, document.id, page_number).replace(
+        ".png", f".max{max_side}.png"
+    )
+    try:
+        return storage.read(key)
+    except Exception:
+        pass  # not rendered yet
+    try:
+        data = render_page_fit(
+            storage.local_path(document.storage_path), page_number, max_side,
+            dpi=settings.page_render_dpi,
+        )
+    except Exception as exc:
+        raise HTTPException(404, f"page unavailable: {exc}") from exc
+    storage.save(key, data)
+    return data
+
+
 @app.get("/api/findings/{finding_id}/evidence/{side}.png")
 def finding_evidence_image(finding_id: str, side: str, session: Session = Depends(get_session)):
     if side not in ("drawing", "spec"):
@@ -394,12 +421,20 @@ def finding_evidence_image(finding_id: str, side: str, session: Session = Depend
 
 
 @app.get("/api/documents/{document_id}/pages/{page_number}.png")
-def page_image(document_id: str, page_number: int, session: Session = Depends(get_session)):
+def page_image(
+    document_id: str,
+    page_number: int,
+    max_side: int | None = Query(default=None, ge=256, le=8192),
+    session: Session = Depends(get_session),
+):
     document = session.get(Document, document_id)
     if document is None:
         raise HTTPException(404, "document not found")
     from .storage import page_image_key
 
+    if max_side is not None:
+        return Response(content=_fitted_page(document, page_number, max_side),
+                        media_type="image/png")
     try:
         data = get_storage().read(page_image_key(document.project_id, document_id, page_number))
     except Exception:

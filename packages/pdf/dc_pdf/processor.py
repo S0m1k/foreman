@@ -109,6 +109,20 @@ def render_page(path: str | Path, page_number: int, dpi: int = DEFAULT_RENDER_DP
     return png
 
 
+def render_page_fit(path: str | Path, page_number: int, max_side: int,
+                    dpi: int = DEFAULT_RENDER_DPI) -> bytes:
+    """Render one page (1-based) with its longer side at most `max_side` px.
+
+    For display: a full-size plan at 200 dpi is ~14000 px wide, which browsers
+    decline to draw inside an SVG image without any error.
+    """
+    with pymupdf.open(path) as doc:
+        page = doc[page_number - 1]
+        longest_in = max(page.rect.width, page.rect.height) / 72.0
+        fit = max(1, min(dpi, int(max_side / longest_in)))
+        return page.get_pixmap(dpi=fit).tobytes("png")
+
+
 def render_page_capped(
     path: str | Path, page_number: int, dpi: int = DEFAULT_RENDER_DPI
 ) -> tuple[bytes, int]:

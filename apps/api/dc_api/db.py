@@ -140,6 +140,26 @@ class AnalysisRun(Base):
     finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class TakeoffRun(Base):
+    """One duct takeoff over a project's drawings, plus the estimator's edits.
+
+    `result_json` is the measured album per document ({document_id: album});
+    `overrides_json` maps "document_id:page" to {run id: system | "excluded"}.
+    """
+
+    __tablename__ = "takeoff_runs"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: _uuid("tko"))
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    status: Mapped[str] = mapped_column(String(20), default="RUNNING")
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    progress_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    result_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    overrides_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    started_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class VlmCache(Base):
     """Cache of VLM calls keyed by (document hash, page, model, prompt version)."""
 
