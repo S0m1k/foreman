@@ -62,6 +62,16 @@ def size_dimensions(text: str) -> tuple[int, int]:
     return int(a), int(b)
 
 
+def labelled_sizes(page: pymupdf.Page) -> frozenset[int]:
+    """Every section dimension written on the sheet, in mm - a scale witness."""
+    sizes: set[int] = set()
+    for word in page.get_text("words"):
+        text = word[4].replace(" ", "")
+        if SIZE_RE.match(text):
+            sizes.update(size_dimensions(normalise_size(text)))
+    return frozenset(sizes)
+
+
 def _black_segments(page: pymupdf.Page) -> list[tuple[float, float, float, float]]:
     out = []
     for path in page.get_drawings():

@@ -81,6 +81,35 @@ class TestMeasurement:
         ])
         assert detect_scale(page) == 100
 
+    def test_pastel_blue_apartment_ducts_are_measured_as_extract(self, tmp_path):
+        """Residential floor sheets of the benchmark album draw the in-flat
+        ВЕм ø125 extract ducts in a pastel blue (0.5, 0.5, 1.0); outside the
+        palette, floors 2-3 measured 4-6 m instead of ~106 m."""
+        pastel = (0.5, 0.5, 1.0)
+        page = plan(tmp_path, [DuctSegment((0, 0), (10, 0), 250, pastel)])
+        runs = centrelines(page, scale=100)
+        assert sum(r.length_m for r in runs) == pytest.approx(10.0, abs=0.5)
+        assert {r.colour for r in runs} == {"blue"}
+
+    def test_labelled_sections_settle_an_ambiguous_scale(self, tmp_path):
+        """ø125 is a standard size at 1:100 and, as 250, at 1:200 - the ladder
+        cannot tell them apart, and on residential floors a few off-ladder
+        stubs tipped it to 1:200, doubling every length. The callouts on the
+        sheet name the sections in mm; the true scale is the one where the
+        measured widths match them."""
+        from dc_extraction.takeoff import measure_sheet
+
+        pdf = tmp_path / "floor.pdf"
+        make_duct_plan_pdf(
+            pdf,
+            [DuctSegment((0, 0), (10, 0), 125, BLUE),
+             DuctSegment((0, 4), (3, 4), 275, BLUE)],  # 550 at 1:200, off-ladder at 1:100
+            callouts=[((400.0, 400.0), ["В1", "ø125"], (5.0, 0.0))],
+        )
+        sheet = measure_sheet(pymupdf.open(pdf), 1)
+        assert sheet.scale == 100
+        assert sum(r.length_m for r in sheet.runs) == pytest.approx(13.0, abs=0.6)
+
     def test_insulation_outlines_do_not_vote_for_the_scale(self, tmp_path):
         """Raw wall pairs of an insulated duct include its outer face (640 mm)
         and a wall-to-face band (620 mm); at 1:200 the latter reads as 1240,

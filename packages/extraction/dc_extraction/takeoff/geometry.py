@@ -35,6 +35,8 @@ STANDARD_WIDTHS_MM = (
 DEFAULT_PALETTE = {
     (1.0, 0.0, 0.0): "red",
     (0.0, 0.0, 1.0): "blue",
+    # residential floors draw in-flat extract ducts (ВЕм ø125) in a pastel blue
+    (0.5, 0.5, 1.0): "blue",
     (0.0, 0.53, 0.0): "green",
     (0.87, 0.44, 0.0): "orange",
 }
@@ -485,30 +487,41 @@ def drop_hatch_pairs(pairs, lattices, colour_segments):
 SCALE_CANDIDATES = (100, 50, 200)
 
 
-def scale_from_runs(runs_at_100: list[DuctRun], candidates=SCALE_CANDIDATES) -> int:
-    """Pick the drawing scale whose run widths land on standard duct sizes.
+def _fits(mm: float, sizes) -> bool:
+    nearest = min(sizes, key=lambda s: abs(s - mm))
+    return abs(nearest - mm) <= max(8.0, 0.03 * nearest)
+
+
+def scale_from_runs(runs_at_100: list[DuctRun], candidates=SCALE_CANDIDATES,
+                    labelled_mm: frozenset[int] = frozenset()) -> int:
+    """Pick the drawing scale at which the run widths make sense.
 
     `runs_at_100` must be measured at 1:100. They are the collapsed
     centrelines, one width per duct: scoring raw wall pairs instead let an
     insulated duct's outer outlines vote too, and a 620 mm wall-to-face band
     reads as 1240 at 1:200 - near enough a standard 1250 to outvote 1:100.
 
-    Widths alone cannot always separate scales that differ by a factor of two -
-    600 mm at 1:100 reads as 300 mm at 1:50, and both are standard sizes - so
-    ties go to the first candidate. Pass `scale` explicitly when the sheet says
-    what it is.
+    The first vote goes to `labelled_mm`, the section dimensions written on
+    the sheet itself: the true scale is the one where measured widths match
+    them. The standard-size ladder alone cannot separate scales a factor of
+    two apart - ø125 at 1:100 reads as a standard 250 at 1:200, and on
+    residential floors a few off-ladder stubs tipped that to 1:200. The ladder
+    breaks ties among the labelled scores, and the first candidate breaks the
+    rest. Pass `scale` explicitly when the sheet says what it is.
     """
-    best, best_score = candidates[0], -1.0
+    labelled = sorted(labelled_mm)
+    best, best_score = candidates[0], (-1.0, -1.0)
     for scale in candidates:
         factor = scale / 100
-        score = 0.0
+        by_label = by_ladder = 0.0
         for run in runs_at_100:
             mm = run.width_mm * factor
-            nearest = min(STANDARD_WIDTHS_MM, key=lambda s: abs(s - mm))
-            if abs(nearest - mm) <= max(8.0, 0.03 * nearest):
-                score += run.length_m
-        if score > best_score:
-            best, best_score = scale, score
+            if labelled and _fits(mm, labelled):
+                by_label += run.length_m
+            if _fits(mm, STANDARD_WIDTHS_MM):
+                by_ladder += run.length_m
+        if (by_label, by_ladder) > best_score:
+            best, best_score = scale, (by_label, by_ladder)
     return best
 
 

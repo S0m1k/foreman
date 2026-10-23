@@ -13,6 +13,7 @@ from .callouts import (
     COLOUR_FAMILY,
     FAMILY_RE,
     equipment_marks,
+    labelled_sizes,
     leaders,
     nearest_run,
     size_dimensions,
@@ -69,7 +70,7 @@ def measure_sheet(doc: pymupdf.Document, page_number: int, scale: int | None = N
     if scale is None:
         # measure once at 1:100, read the scale off the result, rescale
         runs = centrelines(page, scale=100, palette=palette)
-        scale = scale_from_runs(runs)
+        scale = scale_from_runs(runs, labelled_mm=labelled_sizes(page))
         if scale != 100:
             runs = rescale(runs, scale / 100)
     else:
