@@ -16,7 +16,7 @@ from .callouts import (
     nearest_run,
     size_dimensions,
 )
-from .geometry import DuctRun, centrelines, detect_scale, snap_width
+from .geometry import DuctRun, centrelines, rescale, scale_from_runs, snap_width
 from .network import connect, merge_trunks
 from .spec import SpecSystem, parse_specification, unique_equipment
 
@@ -66,8 +66,13 @@ def measure_sheet(doc: pymupdf.Document, page_number: int, scale: int | None = N
     """
     page = doc[page_number - 1]
     if scale is None:
-        scale = detect_scale(page)
-    runs = centrelines(page, scale=scale, palette=palette)
+        # measure once at 1:100, read the scale off the result, rescale
+        runs = centrelines(page, scale=100, palette=palette)
+        scale = scale_from_runs(runs)
+        if scale != 100:
+            runs = rescale(runs, scale / 100)
+    else:
+        runs = centrelines(page, scale=scale, palette=palette)
     trunks, run_to_trunk = merge_trunks(runs)
     component_of = connect(trunks, scale=scale)
     components = build_components(page_number, trunks, component_of)

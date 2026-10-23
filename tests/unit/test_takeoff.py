@@ -81,6 +81,18 @@ class TestMeasurement:
         ])
         assert detect_scale(page) == 100
 
+    def test_insulation_outlines_do_not_vote_for_the_scale(self, tmp_path):
+        """Raw wall pairs of an insulated duct include its outer face (640 mm)
+        and a wall-to-face band (620 mm); at 1:200 the latter reads as 1240,
+        within tolerance of a standard 1250, and outvoted the true 1:100."""
+        red = (1.0, 0.0, 0.0)
+        page = plan(tmp_path, [
+            DuctSegment((0, 0), (12, 0), 600, red, insulated=True),
+            DuctSegment((8, 0), (8, 5), 400, red, insulated=True),
+            DuctSegment((0, 9), (14, 9), 600, BLUE),
+        ])
+        assert detect_scale(page) == 100
+
     def test_insulated_duct_is_flagged_and_measured_at_duct_size(self, tmp_path):
         page = plan(tmp_path, [DuctSegment((0, 0), (12, 0), 600, RED, insulated=True)])
         runs = centrelines(page, scale=100)

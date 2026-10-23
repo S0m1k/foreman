@@ -17,7 +17,7 @@ from __future__ import annotations
 import collections
 import contextlib
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import pymupdf
 
@@ -482,39 +482,45 @@ def drop_hatch_pairs(pairs, lattices, colour_segments):
     return keep
 
 
-def detect_scale(page: pymupdf.Page, palette=None, candidates=(100, 50, 200)) -> int:
-    """Pick the drawing scale whose band widths land on standard duct sizes.
+SCALE_CANDIDATES = (100, 50, 200)
+
+
+def scale_from_runs(runs_at_100: list[DuctRun], candidates=SCALE_CANDIDATES) -> int:
+    """Pick the drawing scale whose run widths land on standard duct sizes.
+
+    `runs_at_100` must be measured at 1:100. They are the collapsed
+    centrelines, one width per duct: scoring raw wall pairs instead let an
+    insulated duct's outer outlines vote too, and a 620 mm wall-to-face band
+    reads as 1240 at 1:200 - near enough a standard 1250 to outvote 1:100.
 
     Widths alone cannot always separate scales that differ by a factor of two -
     600 mm at 1:100 reads as 300 mm at 1:50, and both are standard sizes - so
     ties go to the first candidate. Pass `scale` explicitly when the sheet says
     what it is.
     """
-    palette = palette or DEFAULT_PALETTE
-    segments = page_segments(page)
-    widths: collections.Counter[float] = collections.Counter()
-    for colour in palette:
-        merged = merge_collinear(of_colour(segments, colour))
-        if not merged:
-            continue
-        hatch_idx = grow_hatch(merged, detect_hatch(merged))
-        walls = drop_axis_lines([s for i, s in enumerate(merged) if i not in hatch_idx])
-        for width, _, length in wall_pairs(walls).values():
-            widths[round(width, 2)] += length
-    if not widths:
-        return candidates[0]
     best, best_score = candidates[0], -1.0
     for scale in candidates:
-        mm_per_pt = PT_TO_MM_AT_1_1 * scale
+        factor = scale / 100
         score = 0.0
-        for width, weight in widths.items():
-            mm = width * mm_per_pt
+        for run in runs_at_100:
+            mm = run.width_mm * factor
             nearest = min(STANDARD_WIDTHS_MM, key=lambda s: abs(s - mm))
             if abs(nearest - mm) <= max(8.0, 0.03 * nearest):
-                score += weight
+                score += run.length_m
         if score > best_score:
             best, best_score = scale, score
     return best
+
+
+def rescale(runs: list[DuctRun], factor: float) -> list[DuctRun]:
+    """Runs re-expressed at another scale: widths and lengths are linear in it."""
+    return [replace(r, width_mm=r.width_mm * factor, length_m=r.length_m * factor)
+            for r in runs]
+
+
+def detect_scale(page: pymupdf.Page, palette=None, candidates=SCALE_CANDIDATES) -> int:
+    """Pick the drawing scale of `page` - see :func:`scale_from_runs`."""
+    return scale_from_runs(centrelines(page, scale=100, palette=palette), candidates)
 
 
 STRETCH_SPAN = 2.0  # pt of centreline offset one collinear stretch may cover
