@@ -139,9 +139,11 @@ def _draw_band(page, origin, seg: DuctSegment, half_mm: float, width: float = 0.
                        color=seg.colour, width=width)
 
 
+Callout = tuple[tuple[float, float], list[str], tuple[float, float]]
+
+
 def make_duct_plan_pdf(path: str | Path, segments: list[DuctSegment],
-                       callouts: list[tuple[tuple[float, float], list[str], tuple[float, float]]]
-                       | None = None,
+                       callouts: list[Callout] | None = None,
                        origin: tuple[float, float] = (60.0, 60.0)) -> None:
     """Draw ducts at 1:100 plus optional leader callouts.
 
@@ -151,6 +153,14 @@ def make_duct_plan_pdf(path: str | Path, segments: list[DuctSegment],
     doc = pymupdf.open()
     page = doc.new_page(width=1200, height=850)
     page.insert_font(fontname=FONT, fontfile=_font_file())
+    draw_duct_plan(page, segments, callouts, origin)
+    doc.save(str(path))
+    doc.close()
+
+
+def draw_duct_plan(page, segments: list[DuctSegment], callouts: list[Callout] | None = None,
+                   origin: tuple[float, float] = (60.0, 60.0)) -> None:
+    """Draw ducts and callouts onto an existing page (font already inserted)."""
     ox, oy = origin
 
     for seg in segments:
@@ -197,5 +207,53 @@ def make_duct_plan_pdf(path: str | Path, segments: list[DuctSegment],
         page.draw_line((rule_x1, rule_y),
                        (ox + _to_points(target[0]), oy + _to_points(target[1])),
                        color=(0, 0, 0), width=0.5)
+
+
+# --------------------------------------------------------------------------- #
+# A small HVAC album: plan, schematic, specification - the sheet kinds the
+# takeoff has to tell apart.
+# --------------------------------------------------------------------------- #
+
+# Column positions of the A3 specification form that dc_extraction reads.
+SPEC_X_SYSTEM, SPEC_X_NAME, SPEC_X_UNIT, SPEC_X_QTY = 40.0, 110.0, 900.0, 950.0
+
+
+@dataclass
+class SpecDuct:
+    system: str
+    section: str     # e.g. "600x350"
+    length_m: float
+
+
+def make_album_pdf(path: str | Path, segments: list[DuctSegment],
+                   callouts: list[Callout] | None = None,
+                   spec: list[SpecDuct] | None = None) -> None:
+    """Page 1 plan, page 2 schematic of the same ducts, page 3 specification."""
+    doc = pymupdf.open()
+    for title in ("План 1 этажа", "Схема систем П1, В1"):
+        page = doc.new_page(width=1200, height=850)
+        page.insert_font(fontname=FONT, fontfile=_font_file())
+        draw_duct_plan(page, segments, callouts)
+        page.insert_text((900, 820), title, fontsize=11, fontname=FONT)
+
+    page = doc.new_page(width=1191, height=842)
+    page.insert_font(fontname=FONT, fontfile=_font_file())
+    page.insert_text((300, 40), "Спецификация оборудования, изделий и материалов",
+                     fontsize=12, fontname=FONT)
+    page.insert_text((SPEC_X_NAME, 70), "Наименование и техническая характеристика",
+                     fontsize=8, fontname=FONT)
+    y = 100.0
+    current = None
+    for row in spec or []:
+        if row.system != current:
+            page.insert_text((SPEC_X_SYSTEM, y), row.system, fontsize=9, fontname=FONT)
+            current = row.system
+            y += 16
+        page.insert_text((SPEC_X_NAME, y), f"Воздуховод из оцинкованной стали {row.section}",
+                         fontsize=9, fontname=FONT)
+        page.insert_text((SPEC_X_UNIT, y), "м", fontsize=9, fontname=FONT)
+        page.insert_text((SPEC_X_QTY, y), f"{row.length_m:g}".replace(".", ","),
+                         fontsize=9, fontname=FONT)
+        y += 16
     doc.save(str(path))
     doc.close()

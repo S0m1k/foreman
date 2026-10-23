@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import collections
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import pymupdf
@@ -114,15 +115,26 @@ def measure_sheet(doc: pymupdf.Document, page_number: int, scale: int | None = N
 
 def takeoff(doc: pymupdf.Document, pages: list[int], scope: list[str],
             scale: int | None = None,
-            palette: dict[tuple, str] | None = None) -> tuple[list[TakeoffRow],
-                                                               dict[str, SpecSystem],
-                                                               list[SheetTakeoff]]:
-    """Measure `pages`, attribute to the systems in `scope`, return takeoff rows."""
-    spec = parse_specification(doc)
+            palette: dict[tuple, str] | None = None,
+            spec: dict[str, SpecSystem] | None = None,
+            on_sheet: Callable[[int], None] | None = None) -> tuple[list[TakeoffRow],
+                                                                     dict[str, SpecSystem],
+                                                                     list[SheetTakeoff]]:
+    """Measure `pages`, attribute to the systems in `scope`, return takeoff rows.
+
+    `spec` defaults to the specification found in `doc` itself; pass one when
+    it comes from a separate file. `on_sheet` is told each page as it is done.
+    """
+    if spec is None:
+        spec = parse_specification(doc)
     owner = unique_equipment(spec, set(scope))
 
-    sheets = [measure_sheet(doc, page, scale=scale, equipment_owner=owner, palette=palette)
-              for page in pages]
+    sheets = []
+    for page in pages:
+        sheets.append(measure_sheet(doc, page, scale=scale, equipment_owner=owner,
+                                    palette=palette))
+        if on_sheet is not None:
+            on_sheet(page)
     components: dict[tuple, Component] = {}
     votes: dict[tuple, collections.Counter] = collections.defaultdict(collections.Counter)
     for sheet in sheets:
