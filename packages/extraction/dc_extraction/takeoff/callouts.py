@@ -30,6 +30,7 @@ import re
 import pymupdf
 
 from .geometry import PT_TO_MM_AT_1_1, DuctRun
+from .text import page_words
 
 SIZE_RE = re.compile(r"^([⌀øØФф]\s?\d{2,4}|\d{2,4}\s?[xх×]\s?\d{2,4})$")
 SYSTEM_RE = re.compile(r"^(В|П|ДВ|ПД|ДП)\d+(\.\d+)?[аб]?$")
@@ -65,7 +66,7 @@ def size_dimensions(text: str) -> tuple[int, int]:
 def labelled_sizes(page: pymupdf.Page) -> frozenset[int]:
     """Every section dimension written on the sheet, in mm - a scale witness."""
     sizes: set[int] = set()
-    for word in page.get_text("words"):
+    for word in page_words(page):
         text = word[4].replace(" ", "")
         if SIZE_RE.match(text):
             sizes.update(size_dimensions(normalise_size(text)))
@@ -120,7 +121,7 @@ def leaders(page: pymupdf.Page) -> list[tuple[str, str, float, float]]:
             steps += 1
         return current, steps
 
-    words = page.get_text("words")
+    words = page_words(page)
 
     def stacked_above(word):
         """Lines standing over `word` share its underline and its leader."""
@@ -195,7 +196,7 @@ def leaders(page: pymupdf.Page) -> list[tuple[str, str, float, float]]:
 def equipment_marks(page: pymupdf.Page) -> list[tuple[str, tuple]]:
     """Equipment marks with their word box, for use as attribution anchors."""
     out = []
-    for word in page.get_text("words"):
+    for word in page_words(page):
         match = EQUIPMENT_RE.match(word[4])
         if match:
             out.append((match.group(1), word))

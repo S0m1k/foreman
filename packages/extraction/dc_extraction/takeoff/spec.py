@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 
 import pymupdf
 
+from .text import page_text, page_words
+
 DUCT_RE = re.compile(r"стали\s+([⌀øØФ]?\s?\d+(?:\s?[xх×]\s?\d+)?)", re.IGNORECASE)
 SYSTEM_RE = re.compile(r"^(В|П|ДВ|ПД|ДП)\d+(\.\d+)?[аб]?$")
 EQUIPMENT_RE = re.compile(
@@ -56,7 +58,7 @@ def normalise_size(text: str) -> str:
 
 def _rows(page: pymupdf.Page):
     lines: dict[int, list] = collections.defaultdict(list)
-    for word in page.get_text("words"):
+    for word in page_words(page):
         lines[round(word[1] / ROW_TOL)].append(word)
     for key in sorted(lines):
         words = sorted(lines[key], key=lambda w: w[0])
@@ -86,7 +88,7 @@ def parse_specification(doc: pymupdf.Document) -> dict[str, SpecSystem]:
     systems: dict[str, SpecSystem] = {}
     current: str | None = None
     for page in doc:
-        text = page.get_text()
+        text = page_text(page)
         if "Воздуховод" not in text and "Спецификация" not in text:
             continue
         for system, row, is_duct, quantity in _rows(page):

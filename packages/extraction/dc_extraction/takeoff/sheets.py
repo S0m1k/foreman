@@ -13,6 +13,8 @@ from typing import Literal
 
 import pymupdf
 
+from .text import page_text
+
 SheetKind = Literal["plan", "schematic", "specification", "other"]
 
 TITLE_RE = re.compile(r"^\s*((План|Схема)\b.*?)\s*$", re.MULTILINE)
@@ -33,7 +35,7 @@ class Sheet:
 def classify_sheet(page: pymupdf.Page) -> Sheet:
     # Fonts often extract word gaps as no-break spaces and hyphens as soft
     # hyphens; titles are matched and shown with the plain characters.
-    text = re.sub(r"[ \t ]+", " ", page.get_text()).replace("­", "-")
+    text = re.sub(r"[ \t ]+", " ", page_text(page)).replace("­", "-")
     titles = list(dict.fromkeys(m.group(1) for m in TITLE_RE.finditer(text)))
     spec_titles = list(dict.fromkeys(m.group(1) for m in SPEC_TITLE_RE.finditer(text)))
     if len(titles) + len(spec_titles) >= SHEET_LIST_MIN_TITLES:
