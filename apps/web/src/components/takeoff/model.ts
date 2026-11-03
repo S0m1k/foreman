@@ -132,6 +132,15 @@ const METRES = new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 1, maximu
 const fmt = (value: number) => METRES.format(value);
 export const formatM = fmt;
 
+/** Russian noun form for a count: 1 участок, 2 участка, 5 участков. */
+export function plural(n: number, [one, few, many]: readonly [string, string, string]): string {
+  const tens = n % 100;
+  const units = n % 10;
+  if (tens >= 11 && tens <= 14) return many;
+  if (units === 1) return one;
+  return units >= 2 && units <= 4 ? few : many;
+}
+
 const SPEC_TOLERANCE = 0.03;
 
 export type Verdict = { label: string; tone: string; isOver: boolean };

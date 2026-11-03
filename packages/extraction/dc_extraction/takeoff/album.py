@@ -53,6 +53,18 @@ class AlbumSheet:
     runs: list[AlbumRun] = field(default_factory=list)
     fittings: list[AlbumFitting] = field(default_factory=list)
 
+    def to_json(self) -> dict:
+        return {
+            "page": self.page,
+            "kind": self.kind,
+            "title": self.title,
+            "width": round(self.width, 2),
+            "height": round(self.height, 2),
+            "scale": self.scale,
+            "runs": [_run_json(r) for r in self.runs],
+            "fittings": [_fitting_json(f) for f in self.fittings],
+        }
+
 
 @dataclass
 class AlbumTakeoff:
@@ -62,19 +74,7 @@ class AlbumTakeoff:
 
     def to_json(self) -> dict:
         return {
-            "sheets": [
-                {
-                    "page": s.page,
-                    "kind": s.kind,
-                    "title": s.title,
-                    "width": round(s.width, 2),
-                    "height": round(s.height, 2),
-                    "scale": s.scale,
-                    "runs": [_run_json(r) for r in s.runs],
-                    "fittings": [_fitting_json(f) for f in s.fittings],
-                }
-                for s in self.sheets
-            ],
+            "sheets": [s.to_json() for s in self.sheets],
             "spec_fittings": self.spec_fittings,
             "spec": {
                 name: {"length_m": round(entry.length_m, 2),
@@ -128,18 +128,42 @@ def run_album(doc: pymupdf.Document, spec: dict[str, SpecSystem] | None = None,
         measured += 1
         report("measure", measured, len(plans))
 
-    if plans:
-        rows, _, results = takeoff(doc, [s.page for s in plans], scope=sorted(spec),
-                                   spec=spec, on_sheet=on_sheet)
-        by_page = {s.page: s for s in plans}
-        for result in results:
-            by_page[result.page].scale = result.scale
-        _attach_runs(rows, results, by_page)
-        for sheet in plans:
-            found: list[Fitting] = fittings(doc[sheet.page - 1])
-            sheet.fittings.extend(
-                AlbumFitting(i, f.mark, f.kind, f.x, f.y) for i, f in enumerate(found))
+    _measure_plans(doc, plans, spec, on_sheet=on_sheet)
     return AlbumTakeoff(sheets=sheets, spec=spec, spec_fittings=spec_fitting_counts(spec))
+
+
+def remeasure_plan(doc: pymupdf.Document, page: int, spec: dict[str, SpecSystem],
+                   scale: int) -> AlbumSheet:
+    """Measure one plan sheet again at the scale the estimator gave.
+
+    Systems are attributed from this sheet's own evidence: the album run also
+    pools votes across sheets, so a run's system can differ from the first
+    measurement where only another sheet named it.
+    """
+    pdf_page = doc[page - 1]
+    kind = classify_sheet(pdf_page)
+    sheet = AlbumSheet(page=page, kind="plan", title=kind.title,
+                       width=pdf_page.rect.width, height=pdf_page.rect.height)
+    _measure_plans(doc, [sheet], spec, scale=scale)
+    return sheet
+
+
+def _measure_plans(doc: pymupdf.Document, plans: list[AlbumSheet], spec: dict[str, SpecSystem],
+                   scale: int | None = None,
+                   on_sheet: Callable[[int], None] | None = None) -> None:
+    """Fill each plan's scale, runs and fittings; `scale=None` reads it off each sheet."""
+    if not plans:
+        return
+    rows, _, results = takeoff(doc, [s.page for s in plans], scope=sorted(spec), spec=spec,
+                               scale=scale, on_sheet=on_sheet)
+    by_page = {s.page: s for s in plans}
+    for result in results:
+        by_page[result.page].scale = result.scale
+    _attach_runs(rows, results, by_page)
+    for sheet in plans:
+        found: list[Fitting] = fittings(doc[sheet.page - 1])
+        sheet.fittings.extend(
+            AlbumFitting(i, f.mark, f.kind, f.x, f.y) for i, f in enumerate(found))
 
 
 def _attach_runs(rows: list[TakeoffRow], results, by_page: dict[int, AlbumSheet]) -> None:

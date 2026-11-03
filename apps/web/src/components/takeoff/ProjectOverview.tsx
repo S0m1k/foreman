@@ -7,10 +7,12 @@ import type {
   TakeoffSheetSummary,
 } from "@/lib/api";
 import { UNKNOWN, formatM, naturalOrder, systemColour, verdict } from "./model";
+import { ReviewQueue } from "./ReviewQueue";
 
 interface Props {
   projectId: string;
   takeoff: Takeoff;
+  onUpdate: (takeoff: Takeoff) => void;
 }
 
 const SKIPPED_LABEL: Record<Exclude<SheetKind, "plan">, string> = {
@@ -209,7 +211,7 @@ function SkippedSheets({ sheets }: { sheets: TakeoffSheetSummary[] }) {
   );
 }
 
-export function ProjectOverview({ projectId, takeoff }: Props) {
+export function ProjectOverview({ projectId, takeoff, onUpdate }: Props) {
   const plans = takeoff.sheets.filter((s) => s.kind === "plan");
   const skipped = takeoff.sheets.filter((s) => s.kind !== "plan");
   return (
@@ -218,6 +220,7 @@ export function ProjectOverview({ projectId, takeoff }: Props) {
       {/* two columns, each a stack, so both end on their content: 1fr + 16 + 460 */}
       <div className="grid grid-cols-[minmax(0,1fr)_460px] max-[1100px]:grid-cols-1 gap-4 items-start">
         <div className="flex flex-col gap-4 min-w-0">
+          <ReviewQueue projectId={projectId} takeoff={takeoff} onUpdate={onUpdate} />
           <PlansTable projectId={projectId} plans={plans} />
           <FittingsTable fittings={takeoff.fittings ?? []} />
         </div>

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { UNKNOWN, formatM, verdict } from "@/components/takeoff/model";
+import { UNKNOWN, formatM, plural, verdict } from "@/components/takeoff/model";
 import { ProjectOverview } from "@/components/takeoff/ProjectOverview";
 import { api, takeoffExportUrl, type Project, type Takeoff } from "@/lib/api";
 
@@ -46,6 +46,8 @@ function finding(takeoff: Takeoff): string {
       : "Ни одна система не превышает спецификацию",
   ];
   if (unknown > 0) parts.push(`${formatM(unknown)} м не разнесено`);
+  const open = takeoff.review.filter((i) => !i.is_reviewed).length;
+  if (open > 0) parts.push(`${open} ${plural(open, ["место", "места", "мест"])} на проверку`);
   parts.push(`${plans.length} ${plans.length === 1 ? "план" : "планов"} из ${takeoff.sheets.length} листов`);
   return parts.join(" · ");
 }
@@ -126,7 +128,7 @@ export default function TakeoffProjectPage() {
         <p className="empty">Нажмите «Посчитать», чтобы измерить планы альбома и сверить их со спецификацией.</p>
       )}
       {takeoff && takeoff.status === "RUNNING" && <Progress takeoff={takeoff} />}
-      {done && <ProjectOverview projectId={projectId} takeoff={done} />}
+      {done && <ProjectOverview projectId={projectId} takeoff={done} onUpdate={setTakeoff} />}
     </div>
   );
 }

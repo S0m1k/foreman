@@ -8,6 +8,7 @@ import pymupdf
 from dc_extraction.takeoff import (
     SpecSystem,
     parse_specification,
+    remeasure_plan,
     run_album,
     spec_fitting_counts,
 )
@@ -54,6 +55,39 @@ def _spec_json(spec: dict[str, SpecSystem]) -> dict:
     }
 
 
+def _project_spec(spec_keys: list[str], drawing_keys: list[str]) -> dict[str, SpecSystem]:
+    """Uploaded SPECIFICATION files when there are any, else the album's own sheets."""
+    storage = get_storage()
+    parsed = []
+    for key in spec_keys or drawing_keys:
+        with pymupdf.open(storage.local_path(key)) as doc:
+            parsed.append(parse_specification(doc))
+    return _merge_specs(parsed)
+
+
+def _documents(project_id: str) -> tuple[list[tuple[str, str, str]], list[str]]:
+    """(id, filename, storage key) of each drawing, and the specification files' keys."""
+    with session_scope() as session:
+        docs = session.query(Document).filter_by(project_id=project_id).all()
+        drawings = [(d.id, d.filename, d.storage_path) for d in docs if d.type == "DRAWING"]
+        specs = [d.storage_path for d in docs if d.type == "SPECIFICATION"]
+    return drawings, specs
+
+
+def remeasure_sheet(project_id: str, document_id: str, page: int, scale: int) -> dict:
+    """One plan sheet measured again at `scale`, as the album JSON stores a sheet.
+
+    A few seconds on a dense A0 plan, so the route runs it in the request.
+    """
+    drawings, specs = _documents(project_id)
+    key = next((k for d, _, k in drawings if d == document_id), None)
+    if key is None:
+        raise TakeoffError("Чертёж не найден в проекте.")
+    spec = _project_spec(specs, [k for _, _, k in drawings])
+    with pymupdf.open(get_storage().local_path(key)) as doc:
+        return remeasure_plan(doc, page, spec, scale).to_json()
+
+
 def run_takeoff(project_id: str, run_id: str) -> None:
     """Measure every plan sheet of the project's drawings against its specification.
 
@@ -63,20 +97,12 @@ def run_takeoff(project_id: str, run_id: str) -> None:
     logger.info("takeoff started: project=%s run=%s", project_id, run_id)
     storage = get_storage()
     try:
-        with session_scope() as session:
-            docs = session.query(Document).filter_by(project_id=project_id).all()
-            drawings = [(d.id, d.filename, d.storage_path) for d in docs if d.type == "DRAWING"]
-            specs = [d.storage_path for d in docs if d.type == "SPECIFICATION"]
+        drawings, specs = _documents(project_id)
         if not drawings:
             raise TakeoffError("Загрузите хотя бы один чертёж.")
 
         _update(run_id, progress_json={"step": "spec", "done": 0, "total": 1, "document": None})
-        sources = specs or [path for _, _, path in drawings]
-        parsed = []
-        for key in sources:
-            with pymupdf.open(storage.local_path(key)) as doc:
-                parsed.append(parse_specification(doc))
-        spec = _merge_specs(parsed)
+        spec = _project_spec(specs, [key for _, _, key in drawings])
 
         documents: dict[str, dict] = {}
         for document_id, filename, key in drawings:

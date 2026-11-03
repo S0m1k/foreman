@@ -142,6 +142,22 @@ export const api = {
         body: JSON.stringify({ overrides }),
       },
     ),
+  // the detected scale confirms it; another one measures the sheet again
+  setTakeoffScale: (takeoffId: string, documentId: string, page: number, scale: number) =>
+    request<TakeoffSheet>(
+      `/api/takeoffs/${takeoffId}/sheets/${documentId}/${page}/scale`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scale }),
+      },
+    ),
+  setReviewed: (takeoffId: string, key: string, reviewed: boolean) =>
+    request<Takeoff>(`/api/takeoffs/${takeoffId}/review`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, reviewed }),
+    }),
 };
 
 export type SheetKind = "plan" | "schematic" | "specification" | "other";
@@ -155,6 +171,24 @@ export type TakeoffSheetSummary = {
   scale: number | null;
   run_count: number;
   length_m: number;
+  scale_confirmed: boolean;
+};
+
+export type ReviewKind = "scale" | "unassigned" | "section" | "no_runs" | "over_spec" | "fitting";
+
+export type ReviewItem = {
+  key: string;
+  kind: ReviewKind;
+  document_id: string | null;
+  page: number | null;
+  sheet_title: string | null;
+  system: string | null;
+  mark: string | null;
+  scale: number | null;
+  length_m: number | null;
+  count: number | null;
+  can_dismiss: boolean;
+  is_reviewed: boolean;
 };
 
 export type SystemTotal = {
@@ -181,6 +215,7 @@ export type Takeoff = {
   sheets: TakeoffSheetSummary[];
   systems: SystemTotal[];
   fittings: FittingTotal[];
+  review: ReviewItem[];
 };
 
 export type TakeoffRun = {
@@ -202,6 +237,8 @@ export type TakeoffSheet = {
   page: number;
   title: string | null;
   scale: number | null;
+  detected_scale: number | null;
+  scale_confirmed: boolean;
   width: number;
   height: number;
   image_url: string;

@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { TakeoffSheet } from "@/lib/api";
 import { IconBack } from "@/components/ui/icons";
 import { DrawingPane } from "./DrawingPane";
+import { ScalePanel } from "./ScalePanel";
 import { SystemCard } from "./SystemCard";
 import {
   EXCLUDED,
@@ -28,6 +29,8 @@ interface Props {
   onSave?: (overrides: Overrides) => Promise<void>;
   // the project's XLSX; without it the sheet downloads as CSV
   exportHref?: string;
+  // confirms or corrects the sheet's scale; the page swaps in the sheet it returns
+  onSetScale?: (scale: number) => Promise<void>;
   isDemo?: boolean;
 }
 
@@ -50,12 +53,12 @@ function downloadCsv(text: string) {
   URL.revokeObjectURL(url);
 }
 
-export function SheetScreen({ sheet, imageUrl, backHref, onSave, exportHref, isDemo }: Props) {
+export function SheetScreen({ sheet, imageUrl, backHref, onSave, exportHref, onSetScale, isDemo }: Props) {
   const [overrides, setOverrides] = useState<Overrides>(sheet.overrides);
   const [selected, setSelected] = useState<Group | null>(null);
   const [hoverRun, setHoverRun] = useState<number | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
-  const lastSaved = useRef<Overrides>(sheet.overrides);
+  const [savedOverrides, setSavedOverrides] = useState<Overrides>(sheet.overrides);
 
   const summary = useMemo(() => summarise(sheet, overrides), [sheet, overrides]);
   const fittingCounts = useMemo(() => countFittings(sheet), [sheet]);
@@ -69,18 +72,18 @@ export function SheetScreen({ sheet, imageUrl, backHref, onSave, exportHref, isD
   }, [hoverRun, selected]);
 
   useEffect(() => {
-    if (!onSave || overrides === lastSaved.current) return;
+    if (!onSave || overrides === savedOverrides) return;
     const timer = setTimeout(() => {
       setSaveState("saving");
       onSave(overrides)
         .then(() => {
-          lastSaved.current = overrides;
+          setSavedOverrides(overrides);
           setSaveState("saved");
         })
         .catch(() => setSaveState("error"));
     }, SAVE_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [overrides, onSave]);
+  }, [overrides, onSave, savedOverrides]);
 
   const move = (group: Group, target: string) => {
     setOverrides((prev) => ({
@@ -153,6 +156,14 @@ export function SheetScreen({ sheet, imageUrl, backHref, onSave, exportHref, isD
         />
         <aside className="w-[400px] max-[900px]:w-full shrink-0 border-l border-[var(--border)] flex flex-col" aria-label="Системы листа">
           <div className="flex-1 overflow-auto p-4 space-y-3">
+            {sheet.runs.length > 0 && (
+              <ScalePanel
+                sheet={sheet}
+                editCount={changed}
+                canChange={overrides === savedOverrides && saveState !== "saving"}
+                onSetScale={onSetScale}
+              />
+            )}
             <p className="text-sm">
               {unknown
                 ? <>Не разнесено <span className="num font-medium">{formatM(unknown.sheetM)} м</span> — выберите строку и перенесите участки в систему.</>

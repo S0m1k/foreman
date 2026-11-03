@@ -33,16 +33,26 @@ export default function TakeoffSheetPage() {
     },
     [takeoffId, documentId, pageNumber],
   );
+  const setScale = useCallback(
+    async (scale: number) => {
+      if (!takeoffId) return;
+      setSheet(await api.setTakeoffScale(takeoffId, documentId, pageNumber, scale));
+    },
+    [takeoffId, documentId, pageNumber],
+  );
 
   if (error) return <div className="card p-4 text-sm text-[var(--high)]">{error}</div>;
   if (!sheet) return <p className="text-sm text-[var(--muted)]">Загружаю лист…</p>;
   return (
     <SheetScreen
+      // a new scale is a new measurement: start from its runs and edits
+      key={`${sheet.scale}:${sheet.scale_confirmed}`}
       sheet={sheet}
       imageUrl={apiUrl(sheet.image_url)}
       backHref={`/takeoff/${projectId}`}
       onSave={save}
       exportHref={takeoffExportUrl(sheet.takeoff_id)}
+      onSetScale={setScale}
     />
   );
 }

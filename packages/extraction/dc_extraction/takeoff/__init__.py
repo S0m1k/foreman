@@ -6,7 +6,7 @@ vision model, and cross-checks the result against the designer's own
 specification embedded in the same PDF.
 """
 
-from .album import AlbumFitting, AlbumRun, AlbumSheet, AlbumTakeoff, run_album
+from .album import AlbumFitting, AlbumRun, AlbumSheet, AlbumTakeoff, remeasure_plan, run_album
 from .assign import Component, assign_systems, build_components, exceeds_specification
 from .callouts import COLOUR_FAMILY, leaders, normalise_size, size_dimensions
 from .fittings import Fitting, fittings, spec_fitting_counts
@@ -54,6 +54,7 @@ __all__ = [
     "normalise_size",
     "overlay",
     "parse_specification",
+    "remeasure_plan",
     "run_album",
     "size_dimensions",
     "snap_width",

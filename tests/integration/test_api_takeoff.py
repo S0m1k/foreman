@@ -230,3 +230,87 @@ def test_export_has_an_elements_sheet(client, done):
     by_mark = {r[0]: r for r in rows[1:]}
     assert by_mark["АМР 400x200"][2:] == (2, 5)
     assert by_mark["АДР-К 650x300"][3] is None
+
+
+def test_scale_starts_unconfirmed_and_is_in_the_review_queue(client, done):
+    project_id, document_id, body = done
+    summary = client.get(f"/api/projects/{project_id}/takeoff").json()
+    assert summary["sheets"][0]["scale_confirmed"] is False
+    scale_items = [i for i in summary["review"] if i["kind"] == "scale"]
+    assert [(i["document_id"], i["page"], i["scale"]) for i in scale_items] == [
+        (document_id, 1, 100)]
+
+
+def test_confirming_the_detected_scale_keeps_the_figures(client, done):
+    project_id, document_id, body = done
+    url = f"/api/takeoffs/{body['id']}/sheets/{document_id}/1"
+    before = client.get(url).json()
+    response = client.put(f"{url}/scale", json={"scale": 100})
+    assert response.status_code == 200, response.text
+    sheet = response.json()
+    assert sheet["scale"] == 100 and sheet["scale_confirmed"] is True
+    assert sheet["detected_scale"] == 100
+    assert [r["length_m"] for r in sheet["runs"]] == [r["length_m"] for r in before["runs"]]
+    summary = client.get(f"/api/projects/{project_id}/takeoff").json()
+    assert "scale" not in {i["kind"] for i in summary["review"]}
+
+
+def test_correcting_the_scale_measures_the_sheet_again(client, done):
+    project_id, document_id, body = done
+    url = f"/api/takeoffs/{body['id']}/sheets/{document_id}/1"
+    runs = client.get(url).json()["runs"]
+    client.put(f"{url}/overrides", json={"overrides": {str(runs[0]["id"]): "excluded"}})
+
+    response = client.put(f"{url}/scale", json={"scale": 200})
+    assert response.status_code == 200, response.text
+    sheet = response.json()
+    assert sheet["scale"] == 200 and sheet["scale_confirmed"] is True
+    assert sheet["detected_scale"] == 100, "what the measurer read is kept for reference"
+    assert sum(r["length_m"] for r in sheet["runs"]) == pytest.approx(36.0, abs=2.0)
+    assert sheet["overrides"] == {}, "edits named runs of the old measurement"
+    summary = client.get(f"/api/projects/{project_id}/takeoff").json()
+    assert summary["sheets"][0]["length_m"] == pytest.approx(36.0, abs=2.0)
+
+    back = client.put(f"{url}/scale", json={"scale": 100}).json()
+    assert sum(r["length_m"] for r in back["runs"]) == pytest.approx(18.0, abs=1.0)
+    assert back["detected_scale"] == 100
+
+
+@pytest.mark.parametrize("scale", [0, 5, 5000])
+def test_implausible_scales_are_rejected(client, done, scale):
+    _, document_id, body = done
+    url = f"/api/takeoffs/{body['id']}/sheets/{document_id}/1/scale"
+    assert client.put(url, json={"scale": scale}).status_code == 422
+
+
+def test_only_plan_sheets_take_a_scale(client, done):
+    _, document_id, body = done
+    url = f"/api/takeoffs/{body['id']}/sheets/{document_id}/2/scale"
+    assert client.put(url, json={"scale": 100}).status_code == 404
+
+
+def test_review_items_can_be_marked_reviewed(client, done):
+    project_id, _, body = done
+    summary = client.get(f"/api/projects/{project_id}/takeoff").json()
+    item = next(i for i in summary["review"] if i["can_dismiss"])
+    url = f"/api/takeoffs/{body['id']}/review"
+
+    response = client.put(url, json={"key": item["key"], "reviewed": True})
+    assert response.status_code == 200, response.text
+    marked = next(i for i in response.json()["review"] if i["key"] == item["key"])
+    assert marked["is_reviewed"] is True
+
+    client.put(url, json={"key": item["key"], "reviewed": False})
+    summary = client.get(f"/api/projects/{project_id}/takeoff").json()
+    assert next(i for i in summary["review"] if i["key"] == item["key"])["is_reviewed"] is False
+
+
+def test_only_dismissable_items_can_be_marked_reviewed(client, done):
+    project_id, document_id, body = done
+    url = f"/api/takeoffs/{body['id']}/review"
+    assert client.put(url, json={"key": "no-such-item", "reviewed": True}).status_code == 422
+    # a scale is settled by confirming it, not by waving it through
+    client.put(f"/api/takeoffs/{body['id']}/sheets/{document_id}/1/scale", json={"scale": 200})
+    client.put(f"/api/takeoffs/{body['id']}/sheets/{document_id}/1/scale", json={"scale": 100})
+    summary = client.get(f"/api/projects/{project_id}/takeoff").json()
+    assert "scale" not in {i["kind"] for i in summary["review"]}

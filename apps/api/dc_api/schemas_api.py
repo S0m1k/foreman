@@ -104,6 +104,7 @@ class TakeoffSheetSummaryOut(BaseModel):
     scale: int | None = None
     run_count: int = 0
     length_m: float = 0.0
+    scale_confirmed: bool = False
 
 
 class SystemTotalOut(BaseModel):
@@ -127,6 +128,23 @@ class FittingOut(BaseModel):
     y: float
 
 
+class ReviewItemOut(BaseModel):
+    """One thing the estimator still has to look at; see takeoff_review."""
+
+    key: str
+    kind: str  # scale | unassigned | section | no_runs | over_spec | fitting
+    document_id: str | None = None
+    page: int | None = None
+    sheet_title: str | None = None
+    system: str | None = None
+    mark: str | None = None
+    scale: int | None = None
+    length_m: float | None = None
+    count: int | None = None
+    can_dismiss: bool
+    is_reviewed: bool
+
+
 class TakeoffOut(BaseModel):
     id: str
     project_id: str
@@ -136,6 +154,7 @@ class TakeoffOut(BaseModel):
     sheets: list[TakeoffSheetSummaryOut] = []
     systems: list[SystemTotalOut] = []
     fittings: list[FittingTotalOut] = []
+    review: list[ReviewItemOut] = []
     started_at: dt.datetime
     finished_at: dt.datetime | None = None
 
@@ -159,6 +178,9 @@ class TakeoffSheetOut(BaseModel):
     page: int
     title: str | None = None
     scale: int | None = None
+    # what the measurer read off the sheet, kept when the estimator corrects it
+    detected_scale: int | None = None
+    scale_confirmed: bool = False
     width: float
     height: float
     image_url: str
@@ -169,6 +191,16 @@ class TakeoffSheetOut(BaseModel):
     # each system's length on the project's other plan sheets, edits applied,
     # so the screen can show live project totals while this sheet is edited
     other_sheets_m: dict[str, float]
+
+
+class TakeoffScaleIn(BaseModel):
+    # 1:10 detail to 1:1000 site plan; anything else is a typo
+    scale: int = Field(ge=10, le=1000)
+
+
+class TakeoffReviewIn(BaseModel):
+    key: str = Field(max_length=200)
+    reviewed: bool
 
 
 class TakeoffOverridesIn(BaseModel):
