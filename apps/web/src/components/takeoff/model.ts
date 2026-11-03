@@ -25,21 +25,28 @@ export interface SystemSummary {
 }
 
 const FAMILY_RE = /^(ДВ|ПД|ДП|В|П)/;
-// supply red, extract blue, smoke exhaust green, smoke supply orange
-const FAMILY_HUE: Record<string, number> = { П: 4, В: 214, ДВ: 145, ПД: 30, ДП: 280 };
+// The drawings' own convention: supply red, extract blue, smoke exhaust green, smoke supply
+// orange. Saturation and the lightness band keep every system at 3:1 or more on white.
+const FAMILY_COLOUR: Record<string, { hue: number; sat: number; light: number }> = {
+  П: { hue: 4, sat: 72, light: 46 },
+  В: { hue: 214, sat: 70, light: 44 },
+  ДВ: { hue: 145, sat: 55, light: 32 },
+  ПД: { hue: 30, sat: 85, light: 38 },
+  ДП: { hue: 280, sat: 35, light: 42 },
+};
 
 export function family(system: string): string | null {
   return FAMILY_RE.exec(system)?.[1] ?? null;
 }
 
-/** One hue per family, a lightness per system, so В1 and В2 stay tellable apart. */
+/** One hue per family, a lightness step per system, so В1 and В2 stay tellable apart. */
 export function systemColour(system: string): string {
   const fam = family(system);
-  if (system === EXCLUDED || fam === null) return "#8b98a5";
+  if (system === EXCLUDED || fam === null) return "#8a9099";
+  const { hue, sat, light } = FAMILY_COLOUR[fam];
   let hash = 0;
   for (const char of system) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  const lightness = 48 + (hash % 5) * 6;
-  return `hsl(${FAMILY_HUE[fam]} 78% ${lightness}%)`;
+  return `hsl(${hue} ${sat}% ${light - 8 + (hash % 5) * 4}%)`;
 }
 
 export const naturalOrder = (a: string, b: string) =>
@@ -120,7 +127,9 @@ export function countFittings(sheet: TakeoffSheet): FittingCount[] {
   return [...counts.values()].sort((a, b) => b.count - a.count || naturalOrder(a.mark, b.mark));
 }
 
-const fmt = (value: number) => value.toFixed(1).replace(".", ",");
+// Russian norm: a no-break space between thousands, a decimal comma, one decimal for metres.
+const METRES = new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const fmt = (value: number) => METRES.format(value);
 export const formatM = fmt;
 
 const SPEC_TOLERANCE = 0.03;
@@ -135,7 +144,7 @@ export type Verdict = { label: string; tone: string; isOver: boolean };
 export function verdict(projectM: number, specM: number | null): Verdict {
   // 0 m means the system is specified (its equipment is) but none of its ducts are
   if (specM === null || specM === 0) {
-    return { label: "нет в спецификации", tone: "chip-medium", isOver: false };
+    return { label: "нет в спец.", tone: "chip-medium", isOver: false };
   }
   const delta = projectM - specM;
   if (Math.abs(delta) <= specM * SPEC_TOLERANCE) {

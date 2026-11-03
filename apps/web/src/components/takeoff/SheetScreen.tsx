@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TakeoffSheet } from "@/lib/api";
+import { IconBack } from "@/components/ui/icons";
 import { DrawingPane } from "./DrawingPane";
 import { SystemCard } from "./SystemCard";
 import {
   EXCLUDED,
+  UNKNOWN,
   countFittings,
   formatM,
   moveTargets,
@@ -98,49 +100,49 @@ export function SheetScreen({ sheet, imageUrl, backHref, onSave, exportHref, isD
     setSelected(null);
   };
 
+  const unknown = summary.find((g) => g.system === UNKNOWN);
+  const code = sheet.filename.replace(/\.pdf$/i, "");
+
   return (
-    <div className="relative left-1/2 w-screen -translate-x-1/2 -my-8 flex flex-col h-[calc(100vh-48px)]">
-      <div className="flex items-center gap-3 px-5 py-2.5 border-b border-[var(--line)] bg-[var(--surface)]">
+    <div className="flex flex-col h-[calc(100vh-18px)] max-[900px]:h-auto rounded-[var(--radius-sheet)] overflow-hidden">
+      <header className="flex items-center gap-4 px-5 h-[60px] max-[640px]:h-auto max-[640px]:py-3 max-[640px]:flex-wrap max-[640px]:gap-y-2 border-b border-[var(--border)] flex-none">
         {backHref && (
-          <Link href={backHref} className="text-[var(--muted)] hover:text-[var(--text)] text-sm" title="К листам">
-            ← листы
+          <Link href={backHref} className="btn btn-text -ml-2" aria-label="К проекту">
+            <IconBack /> Проект
           </Link>
         )}
-        <span className="mono text-sm truncate max-w-[28ch]" title={sheet.filename}>{sheet.filename}</span>
-        <span className="text-xs text-[var(--muted)]">
-          лист {sheet.page}
-          {sheet.title ? ` · ${sheet.title}` : ""}
-        </span>
-        {sheet.scale && (
-          <span className="chip chip-review" title="Масштаб найден по типовым сечениям воздуховодов">
-            М 1:{sheet.scale} · авто
-          </span>
-        )}
-        {isDemo && <span className="chip chip-low">демо-данные</span>}
-        <div className="ml-auto flex items-center gap-3">
+        <h1 className="text-[18px] leading-6 font-semibold truncate min-w-0 max-[640px]:order-last max-[640px]:basis-full">
+          {sheet.title ?? `Лист ${sheet.page}`}
+        </h1>
+        <div className="stamp max-[1200px]:hidden" aria-label="Штамп листа">
+          <div className="max-w-[220px]"><span className="k">Шифр</span><span className="v" title={sheet.filename}>{code}</span></div>
+          <div><span className="k">Лист</span><span className="v num">{sheet.page}</span></div>
+          <div><span className="k">Масштаб</span><span className="v num">{sheet.scale ? `1:${sheet.scale}` : "—"}</span></div>
+          <div><span className="k">Итого</span><span className="v num">{formatM(sheetTotal)} м</span></div>
+        </div>
+        {isDemo && <span className="pill pill-neutral">демо-данные</span>}
+        <div className="ml-auto flex items-center gap-2 flex-none">
           {saveState !== "idle" && (
-            <span className={`text-xs ${saveState === "error" ? "text-[var(--high)]" : "text-[var(--muted)]"}`}>
+            <span className={`text-xs ${saveState === "error" ? "error-line" : "muted"}`} role="status">
               {SAVE_LABEL[saveState]}
             </span>
           )}
           {changed > 0 && (
-            <button className="btn btn-ghost !py-1 !px-3 text-xs" onClick={reset}>
+            <button className="btn btn-secondary" onClick={reset}>
               Сбросить правки ({changed})
             </button>
           )}
           {exportHref ? (
-            <a className="btn btn-primary !py-1.5" href={exportHref}>
-              Ведомость по проекту (XLSX)
-            </a>
+            <a className="btn btn-primary" href={exportHref}>Ведомость XLSX</a>
           ) : (
-            <button className="btn btn-primary !py-1.5" onClick={() => downloadCsv(toRuCsv(summary))}>
-              Скачать ведомость (CSV)
+            <button className="btn btn-primary" onClick={() => downloadCsv(toRuCsv(summary))}>
+              Ведомость CSV
             </button>
           )}
         </div>
-      </div>
+      </header>
 
-      <div className="flex flex-1 min-h-0">
+      <div className="flex flex-1 min-h-0 max-[900px]:flex-col">
         <DrawingPane
           sheet={sheet}
           imageUrl={imageUrl}
@@ -149,12 +151,12 @@ export function SheetScreen({ sheet, imageUrl, backHref, onSave, exportHref, isD
           onHover={setHoverRun}
           onPick={pickRun}
         />
-        <aside className="w-[420px] shrink-0 border-l border-[var(--line)] bg-[var(--bg)] flex flex-col">
+        <aside className="w-[400px] max-[900px]:w-full shrink-0 border-l border-[var(--border)] flex flex-col" aria-label="Системы листа">
           <div className="flex-1 overflow-auto p-4 space-y-3">
-            <p className="text-xs text-[var(--muted)] leading-relaxed">
-              Клик по строке подсвечивает участки на чертеже, клик по участку — строку. Полоса —
-              система по всему проекту: бледная часть на других листах, яркая на этом, метка —
-              лимит спецификации.
+            <p className="text-sm">
+              {unknown
+                ? <>Не разнесено <span className="num font-medium">{formatM(unknown.sheetM)} м</span> — выберите строку и перенесите участки в систему.</>
+                : <>Все участки листа разнесены по системам.</>}
             </p>
             {summary.map((s) => (
               <SystemCard
@@ -167,32 +169,30 @@ export function SheetScreen({ sheet, imageUrl, backHref, onSave, exportHref, isD
               />
             ))}
             {fittingCounts.length > 0 && (
-              <article className="card overflow-hidden">
-                <header className="px-4 py-2.5 flex items-baseline gap-3">
-                  <h3 className="text-sm font-bold">Элементы</h3>
-                  <span className="text-xs text-[var(--muted)]">
-                    {fittingCounts.reduce((sum, f) => sum + f.count, 0)} шт. на листе
-                  </span>
+              <article className="panel overflow-hidden">
+                <header className="panel-head !pb-2.5">
+                  <h3>Решётки и клапаны</h3>
+                  <span className="meta num">{fittingCounts.reduce((sum, f) => sum + f.count, 0)} шт. на листе</span>
                 </header>
-                <ul className="border-t border-[var(--line)] divide-y divide-[var(--line)]">
+                <ul>
                   {fittingCounts.map((f) => (
-                    <li key={f.mark} className="flex items-center gap-3 px-4 py-1.5 text-sm">
-                      <span className="mono">{f.mark}</span>
-                      <span className="text-xs text-[var(--muted)]">{f.kind}</span>
-                      <span className="mono ml-auto">{f.count}</span>
+                    <li key={f.mark} className="flex items-center gap-3 px-4 h-9 text-sm border-t border-[var(--rule)]">
+                      <span>{f.mark}</span>
+                      <span className="text-xs muted">{f.kind}</span>
+                      <span className="num ml-auto">{f.count}</span>
                     </li>
                   ))}
                 </ul>
               </article>
             )}
             {summary.length === 0 && (
-              <p className="text-sm text-[var(--muted)]">На листе не найдено воздуховодов.</p>
+              <p className="empty">На листе не найдено воздуховодов.</p>
             )}
           </div>
-          <footer className="border-t border-[var(--line)] bg-[var(--surface)] px-4 py-3 flex items-baseline gap-4">
-            <span className="text-xs text-[var(--muted)]">Итого по листу</span>
-            <span className="mono text-xl font-bold">{formatM(sheetTotal)} м</span>
-            {excludedCount > 0 && <span className="chip chip-low ml-auto">исключено: {excludedCount}</span>}
+          <footer className="border-t border-[var(--border)] px-4 h-14 flex items-center gap-3 flex-none">
+            <span className="text-sm muted">Итого по листу</span>
+            <span className="num text-[22px] ml-auto">{formatM(sheetTotal)} <span className="text-sm muted">м</span></span>
+            {excludedCount > 0 && <span className="pill pill-neutral">исключено {excludedCount}</span>}
           </footer>
         </aside>
       </div>

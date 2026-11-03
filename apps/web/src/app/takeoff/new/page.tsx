@@ -50,50 +50,64 @@ export default function NewTakeoff() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto">
-      <h1 className="text-2xl font-bold">Ведомость воздуховодов</h1>
-      <p className="text-sm text-[var(--muted)] mt-1 mb-6">
-        Загрузите альбом ОВ в PDF. Планы будут найдены по штампу и измерены по векторной
-        геометрии, итог сверится со спецификацией из того же альбома.{" "}
-        <Link href="/takeoff/demo" className="text-[var(--accent)] hover:underline">
-          Посмотреть демо
-        </Link>
-      </p>
-
-      <label className="block mb-5">
-        <span className="text-sm text-[var(--muted)]">Название (необязательно)</span>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Корпус 18 — вентиляция, изм. 3"
-          className="mt-1 w-full card px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
-        />
-      </label>
-
-      <div className="grid sm:grid-cols-[3fr_2fr] gap-4 mb-6 items-start">
-        <FileDrop
-          label="АЛЬБОМ ОВ"
-          hint="Планы, схемы и спецификация — одним или несколькими PDF"
-          files={files.DRAWING}
-          onAdd={(f) => add("DRAWING", f)}
-          onRemove={(i) => remove("DRAWING", i)}
-        />
-        <FileDrop
-          label="СПЕЦИФИКАЦИЯ"
-          hint="Только если она отдельным файлом"
-          files={files.SPECIFICATION}
-          onAdd={(f) => add("SPECIFICATION", f)}
-          onRemove={(i) => remove("SPECIFICATION", i)}
-        />
+    <div>
+      <div className="page-head">
+        <div>
+          <h1>Новая ведомость</h1>
+          <p>Альбом ОВ в PDF: планы найдутся по штампу, воздуховоды измерятся по геометрии, итог сверится со спецификацией.</p>
+        </div>
       </div>
 
-      {error && <div className="card p-3 mb-4 text-sm text-[var(--high)]">{error}</div>}
+      {/* 1fr + 16 + 360: the form beside what it produces */}
+      <div className="grid grid-cols-[minmax(0,1fr)_360px] max-[1000px]:grid-cols-1 gap-4 items-start">
+        <section className="panel">
+          <div className="panel-body !pt-5 space-y-5">
+            <label className="field">
+              <span>Название</span>
+              <input
+                className="input"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Корпус 18 — вентиляция, изм. 3"
+                aria-describedby="name-hint"
+              />
+              <small id="name-hint">Необязательно: по умолчанию — имя файла альбома.</small>
+            </label>
+            <FileDrop
+              label="Альбом ОВ"
+              hint="Планы, схемы и спецификация — одним или несколькими PDF"
+              files={files.DRAWING}
+              onAdd={(f) => add("DRAWING", f)}
+              onRemove={(i) => remove("DRAWING", i)}
+              isMain
+            />
+            <FileDrop
+              label="Спецификация отдельным файлом"
+              hint="Только если её нет в альбоме"
+              files={files.SPECIFICATION}
+              onAdd={(f) => add("SPECIFICATION", f)}
+              onRemove={(i) => remove("SPECIFICATION", i)}
+            />
+            {error && <p className="text-sm error-line">{error}</p>}
+            <div className="flex items-center gap-4">
+              <button className="btn btn-primary btn-lg" disabled={!canStart} onClick={start}>
+                Посчитать
+              </button>
+              {status && <span className="text-sm muted" role="status">{status}</span>}
+            </div>
+          </div>
+        </section>
 
-      <div className="flex items-center gap-4">
-        <button className="btn btn-primary" disabled={!canStart} onClick={start}>
-          Посчитать
-        </button>
-        {status && <span className="text-sm text-[var(--muted)]">{status}</span>}
+        <aside className="panel">
+          <header className="panel-head"><h2>Что получится</h2></header>
+          <ul className="panel-body space-y-3 text-sm">
+            <li><span className="font-medium">Ведомость воздуховодов</span> — система, сечение, изоляция, длина по каждому плану.</li>
+            <li><span className="font-medium">Решётки и клапаны</span> — счёт по подписям на планах.</li>
+            <li><span className="font-medium">Сверка со спецификацией</span> — где измерено больше, чем заложено на всё здание.</li>
+            <li><span className="font-medium">Правки на чертеже</span> — перенос участков между системами, выгрузка в Excel.</li>
+            <li><Link href="/takeoff/demo" className="btn btn-secondary mt-1">Открыть демо-лист</Link></li>
+          </ul>
+        </aside>
       </div>
     </div>
   );

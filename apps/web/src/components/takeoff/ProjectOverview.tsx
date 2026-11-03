@@ -11,206 +11,221 @@ import { UNKNOWN, formatM, naturalOrder, systemColour, verdict } from "./model";
 interface Props {
   projectId: string;
   takeoff: Takeoff;
-  exportHref: string;
 }
 
 const SKIPPED_LABEL: Record<Exclude<SheetKind, "plan">, string> = {
-  schematic: "схемы",
-  specification: "спецификация",
-  other: "прочие листы",
+  schematic: "Схемы",
+  specification: "Спецификация",
+  other: "Прочие листы",
 };
 
-function PlanCard({ projectId, sheet }: { projectId: string; sheet: TakeoffSheetSummary }) {
-  const href = `/takeoff/${projectId}/sheet/${sheet.document_id}/${sheet.page}`;
-  const isEmpty = sheet.run_count === 0;
-  return (
-    <Link href={href} className="card card-hover block p-4">
-      <p className="font-semibold leading-snug">{sheet.title ?? `Лист ${sheet.page}`}</p>
-      <p className="text-xs text-[var(--muted)] mt-1 truncate">
-        лист {sheet.page} · {sheet.filename}
-      </p>
-      <div className="flex items-baseline gap-3 mt-4">
-        <span className={`mono text-2xl font-bold ${isEmpty ? "text-[var(--muted)]" : ""}`}>
-          {formatM(sheet.length_m)} м
-        </span>
-        <span className="text-xs text-[var(--muted)]">{sheet.run_count} участков</span>
-        {sheet.scale && <span className="chip chip-review ml-auto">1:{sheet.scale}</span>}
-      </div>
-      {isEmpty && (
-        <p className="text-xs text-[var(--medium)] mt-2">
-          Воздуховоды не найдены — возможно, они нарисованы цветом вне палитры.
-        </p>
-      )}
-    </Link>
-  );
-}
-
-function SkippedSheets({ sheets }: { sheets: TakeoffSheetSummary[] }) {
-  const byKind = Object.entries(SKIPPED_LABEL).map(([kind, label]) => ({
-    label,
-    sheets: sheets.filter((s) => s.kind === kind),
-  }));
-  return (
-    <details className="card p-4 text-sm">
-      <summary className="cursor-pointer text-[var(--muted)]">
-        Не измеряются:{" "}
-        {byKind
-          .filter((k) => k.sheets.length > 0)
-          .map((k) => `${k.label} — ${k.sheets.length}`)
-          .join(", ")}
-      </summary>
-      <ul className="mt-3 space-y-1 max-h-72 overflow-auto">
-        {byKind.flatMap((k) =>
-          k.sheets.map((s) => (
-            <li key={`${s.document_id}:${s.page}`} className="flex gap-3">
-              <span className="mono text-[var(--muted)] w-10 text-right">{s.page}</span>
-              <span className="text-[var(--muted)] w-28">{k.label}</span>
-              <span className="truncate">{s.title ?? "—"}</span>
-            </li>
-          )),
-        )}
-      </ul>
-    </details>
-  );
-}
-
+/** Over the specification first, then not in it, then the rest in system order. */
 function rank(system: SystemTotal): number {
-  const v = verdict(system.measured_m, system.spec_m);
   if (system.system === UNKNOWN) return 3;
-  return v.isOver ? 0 : system.spec_m === null ? 1 : 2;
-}
-
-function SystemsTable({ systems }: { systems: SystemTotal[] }) {
-  const ordered = [...systems].sort(
-    (a, b) => rank(a) - rank(b) || naturalOrder(a.system, b.system),
-  );
-  return (
-    <table className="w-full text-sm">
-      <thead>
-        <tr className="text-xs text-[var(--muted)] text-left">
-          <th className="font-normal py-2">Система</th>
-          <th className="font-normal text-right">Измерено, м</th>
-          <th className="font-normal text-right">По спец., м</th>
-          <th className="font-normal text-right">Сверка</th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-[var(--line)]">
-        {ordered.map((s) => {
-          const v = verdict(s.measured_m, s.spec_m);
-          return (
-            <tr key={s.system}>
-              <td className="py-1.5 mono font-semibold" style={{ color: systemColour(s.system) }}>
-                {s.system}
-              </td>
-              <td className="mono text-right">{formatM(s.measured_m)}</td>
-              <td className="mono text-right text-[var(--muted)]">
-                {s.spec_m === null ? "—" : formatM(s.spec_m)}
-              </td>
-              <td className="text-right">
-                {s.system === UNKNOWN ? (
-                  <span className="chip chip-medium">разобрать</span>
-                ) : (
-                  <span className={`chip ${v.tone}`}>{v.label}</span>
-                )}
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
-  );
+  const v = verdict(system.measured_m, system.spec_m);
+  return v.isOver ? 0 : !system.spec_m ? 1 : 2;
 }
 
 function countVerdict(counted: number, spec: number | null) {
-  if (spec === null) return { label: "нет в спецификации", tone: "chip-medium" };
-  if (counted > spec) return { label: `+${counted - spec} сверх`, tone: "chip-high" };
-  if (counted === spec) return { label: "сходится", tone: "chip-ok" };
-  return { label: `ещё ${spec - counted}`, tone: "chip-low" };
+  if (spec === null) return { label: "нет в спец.", tone: "pill-warning" };
+  if (counted > spec) return { label: `+${counted - spec} сверх`, tone: "pill-negative" };
+  if (counted === spec) return { label: "сходится", tone: "pill-positive" };
+  return { label: `ещё ${spec - counted}`, tone: "pill-neutral" };
+}
+
+function Kpis({ takeoff, plans }: { takeoff: Takeoff; plans: TakeoffSheetSummary[] }) {
+  const total = plans.reduce((sum, s) => sum + s.length_m, 0);
+  const over = takeoff.systems.filter((s) => s.system !== UNKNOWN && verdict(s.measured_m, s.spec_m).isOver).length;
+  const unknown = takeoff.systems.find((s) => s.system === UNKNOWN)?.measured_m ?? 0;
+  const counted = takeoff.fittings.reduce((sum, f) => sum + f.counted, 0);
+  const specified = takeoff.fittings.reduce((sum, f) => sum + (f.spec ?? 0), 0);
+  const cells = [
+    { label: "Воздуховоды на планах", value: <>{formatM(total)} <small>м</small></>, lead: true },
+    { label: "Систем сверх спецификации", value: over, tone: over > 0 ? "text-[var(--negative)]" : "" },
+    { label: "Не разнесено по системам", value: <>{formatM(unknown)} <small>м</small></> },
+    { label: "Решётки и клапаны", value: <>{counted} <small>из {specified} по спец.</small></> },
+  ];
+  return (
+    <div className="panel grid grid-cols-4 max-[900px]:grid-cols-2 mb-4">
+      {cells.map((c, i) => (
+        <div key={c.label} className={`px-5 py-4 ${i > 0 ? "border-l border-[var(--border)]" : ""} max-[900px]:[&:nth-child(3)]:border-l-0`}>
+          <div className="text-xs muted">{c.label}</div>
+          <div className={`num mt-1 ${c.lead ? "text-[28px] leading-9" : "text-[22px] leading-9"} ${c.tone ?? ""} [&_small]:text-sm [&_small]:leading-5 [&_small]:text-[var(--muted)]`}>
+            {c.value}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PlansTable({ projectId, plans }: { projectId: string; plans: TakeoffSheetSummary[] }) {
+  return (
+    <section className="panel">
+      <header className="panel-head">
+        <h2>Планы</h2>
+        <span className="meta">измеряются по геометрии; откройте лист, чтобы проверить разнесение</span>
+      </header>
+      {plans.length === 0 ? (
+        <div className="panel-body"><p className="empty">В альбоме не найдено листов с заголовком «План…».</p></div>
+      ) : (
+        <table className="table">
+          <thead>
+            <tr><th>Лист</th><th className="num">№</th><th className="num">Масштаб</th><th className="num max-[640px]:hidden">Участков</th><th className="num">Длина, м</th></tr>
+          </thead>
+          <tbody>
+            {plans.map((s) => (
+              <tr key={`${s.document_id}:${s.page}`}>
+                <td className="max-w-0 w-1/2">
+                  <Link className="block truncate font-medium hover:underline" href={`/takeoff/${projectId}/sheet/${s.document_id}/${s.page}`}>
+                    {s.title ?? `Лист ${s.page}`}
+                  </Link>
+                  {s.run_count === 0 && <div className="text-xs muted">воздуховоды не найдены</div>}
+                </td>
+                <td className="num">{s.page}</td>
+                <td className="num">{s.scale ? `1:${s.scale}` : <span className="dash">—</span>}</td>
+                <td className="num max-[640px]:hidden">{s.run_count}</td>
+                <td className="num font-medium">{formatM(s.length_m)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
+function SystemsTable({ systems }: { systems: SystemTotal[] }) {
+  const ordered = [...systems].sort((a, b) => rank(a) - rank(b) || naturalOrder(a.system, b.system));
+  return (
+    <section className="panel flex flex-col max-h-[560px]">
+      <header className="panel-head">
+        <h2>Сверка со спецификацией</h2>
+        <span className="meta num">{systems.length} систем</span>
+      </header>
+      <p className="px-5 pb-3 text-xs muted">
+        Спецификация — на всё здание: превышение — ошибка, «ещё N м» — остаток на неизмеренных листах.
+      </p>
+      <div className="overflow-auto min-h-0">
+        <table className="table">
+          <thead className="sticky top-0 bg-[var(--surface)]">
+            <tr><th>Система</th><th className="num">Измерено</th><th className="num max-[640px]:hidden">По спец.</th><th className="text-right">Сверка</th></tr>
+          </thead>
+          <tbody>
+            {ordered.map((s) => {
+              const v = verdict(s.measured_m, s.spec_m);
+              return (
+                <tr key={s.system}>
+                  <td>
+                    <span className="inline-flex items-center gap-2 font-medium">
+                      <span className="dot" style={{ background: systemColour(s.system) }} />
+                      {s.system}
+                    </span>
+                  </td>
+                  <td className="num">{formatM(s.measured_m)}</td>
+                  <td className="num max-[640px]:hidden">{s.spec_m ? formatM(s.spec_m) : <span className="dash">—</span>}</td>
+                  <td className="text-right">
+                    {s.system === UNKNOWN
+                      ? <span className="pill pill-warning">разнести</span>
+                      : <span className={`pill ${v.tone}`}>{v.label}</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
 }
 
 function FittingsTable({ fittings }: { fittings: FittingTotal[] }) {
   return (
-    <table className="w-full text-sm">
-      <thead>
-        <tr className="text-xs text-[var(--muted)] text-left">
-          <th className="font-normal py-2">Элемент</th>
-          <th className="font-normal text-right">На планах</th>
-          <th className="font-normal text-right">По спец.</th>
-          <th className="font-normal text-right">Сверка</th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-[var(--line)]">
-        {fittings.map((f) => {
-          const v = countVerdict(f.counted, f.spec);
-          return (
-            <tr key={f.mark}>
-              <td className="py-1.5 mono">{f.mark}</td>
-              <td className="mono text-right">{f.counted}</td>
-              <td className="mono text-right text-[var(--muted)]">{f.spec ?? "—"}</td>
-              <td className="text-right"><span className={`chip ${v.tone}`}>{v.label}</span></td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    <section className="panel flex flex-col max-h-[480px]">
+      <header className="panel-head">
+        <h2>Решётки и клапаны</h2>
+        <span className="meta">подписи на планах против строк спецификации</span>
+      </header>
+      {fittings.length === 0 ? (
+        <div className="panel-body"><p className="empty">На планах нет подписей решёток и клапанов.</p></div>
+      ) : (
+        <div className="overflow-auto min-h-0">
+          <table className="table">
+            <thead className="sticky top-0 bg-[var(--surface)]">
+              <tr><th>Элемент</th><th className="max-[640px]:hidden">Тип</th><th className="num">На планах</th><th className="num">По спец.</th><th className="text-right">Сверка</th></tr>
+            </thead>
+            <tbody>
+              {fittings.map((f) => {
+                const v = countVerdict(f.counted, f.spec);
+                return (
+                  <tr key={f.mark}>
+                    <td className="font-medium whitespace-nowrap max-[640px]:whitespace-normal max-[640px]:break-all">{f.mark}</td>
+                    <td className="muted max-[640px]:hidden">{f.kind}</td>
+                    <td className="num">{f.counted}</td>
+                    <td className="num">{f.spec ?? <span className="dash">—</span>}</td>
+                    <td className="text-right"><span className={`pill ${v.tone}`}>{v.label}</span></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
 
-export function ProjectOverview({ projectId, takeoff, exportHref }: Props) {
+function SkippedSheets({ sheets }: { sheets: TakeoffSheetSummary[] }) {
+  const byKind = Object.entries(SKIPPED_LABEL)
+    .map(([kind, label]) => ({ kind, label, sheets: sheets.filter((s) => s.kind === kind) }))
+    .filter((k) => k.sheets.length > 0);
+  return (
+    <section className="panel">
+      <header className="panel-head">
+        <h2>Не измеряются</h2>
+        <span className="meta num">{sheets.length} листов</span>
+      </header>
+      <ul className="pb-2">
+        {byKind.map((k) => (
+          <li key={k.kind} className="border-t border-[var(--rule)]">
+            <details>
+              <summary className="flex items-center gap-3 px-5 h-11 cursor-pointer hover:bg-[var(--raised)]">
+                <span className="font-medium">{k.label}</span>
+                <span className="num muted ml-auto">{k.sheets.length}</span>
+              </summary>
+              <ul className="px-5 pb-3 text-sm max-h-56 overflow-auto">
+                {k.sheets.map((s) => (
+                  <li key={`${s.document_id}:${s.page}`} className="flex gap-3 py-1">
+                    <span className="num muted w-8 text-right flex-none">{s.page}</span>
+                    <span className="truncate">{s.title ?? "без заголовка"}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+export function ProjectOverview({ projectId, takeoff }: Props) {
   const plans = takeoff.sheets.filter((s) => s.kind === "plan");
   const skipped = takeoff.sheets.filter((s) => s.kind !== "plan");
-  const total = plans.reduce((sum, s) => sum + s.length_m, 0);
-  const overCount = takeoff.systems.filter((s) => verdict(s.measured_m, s.spec_m).isOver).length;
-
   return (
-    <div className="grid lg:grid-cols-[1fr_380px] gap-8 items-start">
-      <section>
-        <div className="flex items-baseline gap-4 mb-4">
-          <h2 className="text-lg font-bold">Планы</h2>
-          <span className="text-sm text-[var(--muted)]">
-            {plans.length} из {takeoff.sheets.length} листов · всего{" "}
-            <span className="mono text-[var(--text)]">{formatM(total)} м</span>
-          </span>
+    <>
+      <Kpis takeoff={takeoff} plans={plans} />
+      {/* two columns, each a stack, so both end on their content: 1fr + 16 + 460 */}
+      <div className="grid grid-cols-[minmax(0,1fr)_460px] max-[1100px]:grid-cols-1 gap-4 items-start">
+        <div className="flex flex-col gap-4 min-w-0">
+          <PlansTable projectId={projectId} plans={plans} />
+          <FittingsTable fittings={takeoff.fittings ?? []} />
         </div>
-        {plans.length === 0 ? (
-          <p className="card p-4 text-sm text-[var(--muted)]">
-            В альбоме не найдено листов с заголовком «План…».
-          </p>
-        ) : (
-          <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3 mb-4">
-            {plans.map((s) => (
-              <PlanCard key={`${s.document_id}:${s.page}`} projectId={projectId} sheet={s} />
-            ))}
-          </div>
-        )}
-        {skipped.length > 0 && <SkippedSheets sheets={skipped} />}
-        {(takeoff.fittings ?? []).length > 0 && (
-          <div className="card p-4 mt-4">
-            <h2 className="font-bold mb-1">Решётки и клапаны</h2>
-            <p className="text-xs text-[var(--muted)] mb-2">
-              Подписи на планах против строк оборудования в спецификации.
-            </p>
-            <div className="max-h-80 overflow-auto"><FittingsTable fittings={takeoff.fittings} /></div>
-          </div>
-        )}
-      </section>
-
-      <aside className="card p-4 lg:sticky lg:top-20">
-        <div className="flex items-baseline justify-between mb-1">
-          <h2 className="font-bold">Сверка со спецификацией</h2>
-          {overCount > 0 && <span className="chip chip-high">{overCount} сверх</span>}
-        </div>
-        <p className="text-xs text-[var(--muted)] mb-3">
-          Спецификация — на всё здание, поэтому превышение всегда ошибка, а «ещё N м» значит,
-          что остальное на неизмеренных листах.
-        </p>
-        <div className="max-h-[60vh] overflow-auto">
+        <div className="flex flex-col gap-4 min-w-0">
           <SystemsTable systems={takeoff.systems} />
+          {skipped.length > 0 && <SkippedSheets sheets={skipped} />}
         </div>
-        <a href={exportHref} className="btn btn-primary w-full justify-center mt-4">
-          Ведомость (XLSX)
-        </a>
-      </aside>
-    </div>
+      </div>
+    </>
   );
 }

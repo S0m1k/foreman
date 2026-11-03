@@ -20,36 +20,28 @@ export function DrawingPane({ sheet, imageUrl, overrides, highlighted, onHover, 
   const [zoom, setZoom] = useState(1);
   const [showFittings, setShowFittings] = useState(true);
   const dim = highlighted.size > 0;
+  const fittingCount = sheet.fittings?.length ?? 0;
 
   return (
-    <section className="relative flex-1 min-w-0 flex flex-col">
-      <div className="absolute right-4 top-4 z-10 flex items-center gap-1 card px-1.5 py-1">
-        <button
-          onClick={() => setShowFittings((on) => !on)}
-          aria-pressed={showFittings}
-          title="Решётки и клапаны"
-          className={`text-xs px-2 py-1 rounded mr-1 ${
-            showFittings ? "text-[var(--accent)]" : "text-[var(--muted)] hover:text-[var(--text)]"
-          }`}
-        >
-          ◆ элементы
-        </button>
-        {ZOOMS.map((z) => (
-          <button
-            key={z}
-            onClick={() => setZoom(z)}
-            className={`mono text-xs px-2 py-1 rounded ${
-              zoom === z
-                ? "bg-[var(--accent)] text-[#17130a]"
-                : "text-[var(--muted)] hover:text-[var(--text)]"
-            }`}
-          >
-            {Math.round(z * 100)}%
-          </button>
-        ))}
+    <section className="relative flex-1 min-w-0 flex flex-col bg-[var(--raised)]" aria-label="Чертёж">
+      <div className="absolute left-4 top-4 z-10 flex items-center gap-2">
+        <div className="segmented" role="group" aria-label="Масштаб просмотра">
+          {ZOOMS.map((z) => (
+            <button key={z} aria-pressed={zoom === z} onClick={() => setZoom(z)}>
+              {Math.round(z * 100)}%
+            </button>
+          ))}
+        </div>
+        {fittingCount > 0 && (
+          <div className="segmented">
+            <button aria-pressed={showFittings} onClick={() => setShowFittings((on) => !on)}>
+              Решётки и клапаны · {fittingCount}
+            </button>
+          </div>
+        )}
       </div>
 
-      <div className="flex-1 overflow-auto bg-[#0c1014]">
+      <div className="flex-1 overflow-auto">
         <svg
           viewBox={`0 0 ${sheet.width} ${sheet.height}`}
           style={{ width: `${zoom * 100}%`, minWidth: 640 }}
@@ -57,21 +49,21 @@ export function DrawingPane({ sheet, imageUrl, overrides, highlighted, onHover, 
           role="img"
           aria-label="План ОВ с размеченными воздуховодами"
         >
-          <rect width={sheet.width} height={sheet.height} fill="#f4f1ea" />
-          <image href={imageUrl} width={sheet.width} height={sheet.height} opacity={0.55} />
+          <rect width={sheet.width} height={sheet.height} fill="#ffffff" />
+          <image href={imageUrl} width={sheet.width} height={sheet.height} opacity={0.5} />
           {sheet.runs.map((run) => {
             const system = effectiveSystem(run, overrides);
             const excluded = system === EXCLUDED;
             const on = highlighted.has(run.id);
             const colour = systemColour(system);
-            const opacity = excluded ? 0.35 : dim && !on ? 0.25 : 1;
+            const opacity = excluded ? 0.4 : dim && !on ? 0.22 : 1;
             const [x1, y1] = run.p0;
             const [x2, y2] = run.p1;
             const line = { x1, y1, x2, y2, strokeLinecap: "round" as const };
             return (
               <g key={run.id} opacity={opacity}>
                 {on && (
-                  <line {...line} stroke={colour} strokeWidth={14} opacity={0.3}
+                  <line {...line} stroke={colour} strokeWidth={14} opacity={0.22}
                         vectorEffect="non-scaling-stroke" />
                 )}
                 <line {...line} stroke={colour} strokeWidth={on ? 5 : 3}
@@ -89,9 +81,9 @@ export function DrawingPane({ sheet, imageUrl, overrides, highlighted, onHover, 
             (sheet.fittings ?? []).map((item) => (
               <g key={`f${item.id}`} transform={`translate(${item.x} ${item.y})`}>
                 <title>{item.mark}</title>
-                <rect x={-5} y={-5} width={10} height={10} transform="rotate(45)"
-                      fill={item.kind === "клапан" ? "#f5a524" : "#1e252d"}
-                      stroke="#f5a524" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+                <rect x={-4.5} y={-4.5} width={9} height={9} transform="rotate(45)"
+                      fill={item.kind === "клапан" ? "#141619" : "#ffffff"}
+                      stroke="#141619" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
               </g>
             ))}
         </svg>

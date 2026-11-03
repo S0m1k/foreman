@@ -16,83 +16,95 @@ interface Props {
   onMove: (group: Group, target: string) => void;
 }
 
+/**
+ * The plan track: as long as the specification allows, the other sheets' metres as a pale
+ * segment, this sheet's in the system's colour, anything past the limit in the negative colour.
+ */
+function PlanTrack({ summary, colour }: { summary: SystemSummary; colour: string }) {
+  const { sheetM, projectM, specM } = summary;
+  const limit = specM && specM > 0 ? specM : null;
+  const scale = Math.max(projectM, limit ?? 0, 1);
+  const pct = (m: number) => `${(Math.min(m, scale) / scale) * 100}%`;
+  const others = Math.max(projectM - sheetM, 0);
+  const within = limit ? Math.min(projectM, limit) : projectM;
+  const over = limit ? Math.max(projectM - limit, 0) : 0;
+  return (
+    <div className="relative mt-3 h-1.5 rounded-full bg-[var(--active)] overflow-hidden" aria-hidden>
+      <div className="absolute inset-y-0 left-0 opacity-35" style={{ width: pct(Math.min(others, within)), background: colour }} />
+      <div className="absolute inset-y-0" style={{ left: pct(Math.min(others, within)), width: pct(Math.max(within - others, 0)), background: colour }} />
+      {over > 0 && (
+        <div className="absolute inset-y-0" style={{ left: pct(limit!), width: pct(over), background: "var(--negative)" }} />
+      )}
+    </div>
+  );
+}
+
 export function SystemCard({ summary, targets, selectedKey, onSelect, onMove }: Props) {
   const colour = systemColour(summary.system);
   const v = verdict(summary.projectM, summary.specM);
-  const scaleMax = Math.max(summary.projectM, summary.specM ?? 0, 1) * 1.08;
-  const otherPct = ((summary.projectM - summary.sheetM) / scaleMax) * 100;
-  const sheetPct = (summary.sheetM / scaleMax) * 100;
-  const specPct = summary.specM === null ? null : (summary.specM / scaleMax) * 100;
+  const isUnknown = summary.system === UNKNOWN;
 
   return (
-    <article className="card overflow-hidden" style={{ borderLeft: `3px solid ${colour}` }}>
-      <header className="px-4 pt-3 pb-2">
-        <div className="flex items-baseline gap-3">
-          <h3 className="mono text-lg font-bold" style={{ color: colour }}>
-            {summary.system}
-          </h3>
-          <span className="mono text-sm" title="Длина на этом листе">
-            {formatM(summary.sheetM)} м
+    <article className="panel overflow-hidden">
+      <header className="px-4 pt-3.5 pb-3">
+        <div className="flex items-center gap-2.5">
+          <span className="dot" style={{ background: colour }} />
+          <h3 className="text-[15px] font-semibold">{summary.system}</h3>
+          <span className="num text-[15px] ml-1" title="Длина на этом листе">
+            {formatM(summary.sheetM)} <span className="muted text-xs">м</span>
           </span>
-          <span className={`chip ${v.tone} ml-auto`}>{v.label}</span>
-        </div>
-        <p className="text-xs text-[var(--muted)] mt-1">
-          по проекту <span className="mono">{formatM(summary.projectM)}</span>
-          {summary.specM !== null && (
-            <>
-              {" "}из <span className="mono">{formatM(summary.specM)} м</span> по спецификации
-            </>
-          )}
-        </p>
-        <div className="relative mt-2 h-1.5 rounded-full bg-[var(--surface-2)] flex" aria-hidden>
-          <div className="h-full rounded-l-full opacity-40" style={{ width: `${otherPct}%`, background: colour }}
-               title="На других листах" />
-          <div className="h-full" style={{ width: `${sheetPct}%`, background: colour }}
-               title="На этом листе" />
-          {specPct !== null && (
-            <div className="absolute -top-1 h-3.5 w-0.5 bg-[var(--text)]" style={{ left: `${specPct}%` }}
-                 title="Лимит по спецификации" />
+          {isUnknown ? (
+            <span className="pill pill-warning ml-auto">разнести</span>
+          ) : (
+            <span className={`pill ${v.tone} ml-auto`}>{v.label}</span>
           )}
         </div>
+        {!isUnknown && (
+          <>
+            <p className="text-xs muted mt-1.5 num">
+              по проекту {formatM(summary.projectM)} м
+              {summary.specM ? ` из ${formatM(summary.specM)} м по спецификации` : ""}
+            </p>
+            <PlanTrack summary={summary} colour={colour} />
+          </>
+        )}
       </header>
 
-      <ul className="border-t border-[var(--line)] divide-y divide-[var(--line)]">
+      <ul>
         {summary.groups.map((g) => {
           const active = g.key === selectedKey;
           return (
             <li
               key={g.key}
-              className={`grid grid-cols-[1fr_auto_auto_auto] items-center gap-3 px-4 py-2 text-sm cursor-pointer transition-colors ${
-                active
-                  ? "bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] shadow-[inset_3px_0_0_var(--accent)]"
-                  : "hover:bg-[var(--surface-2)]"
+              className={`grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-3 px-4 h-10 text-sm border-t border-[var(--rule)] cursor-pointer transition-colors ${
+                active ? "bg-[var(--active)]" : "hover:bg-[var(--raised)]"
               }`}
               onClick={() => onSelect(active ? null : g)}
+              aria-selected={active}
             >
-              <span className="mono">{g.section}</span>
-              <span className="text-xs text-[var(--muted)] w-16">{g.insulated ? "изолир." : "—"}</span>
-              <span className="mono w-14 text-right">{formatM(g.lengthM)}</span>
+              <span className="num truncate">{g.section}</span>
+              <span className="text-xs muted w-16 max-[640px]:w-auto">
+                {g.insulated && <><span className="max-[640px]:hidden">в изоляции</span><span className="hidden max-[640px]:inline">изол.</span></>}
+              </span>
+              <span className="num w-14 text-right">{formatM(g.lengthM)}</span>
               <select
-                aria-label={`Перенести участок ${g.section} в другую систему`}
+                aria-label={`Перенести участки ${g.section} в другую систему`}
                 value=""
                 onClick={(e) => e.stopPropagation()}
                 onChange={(e) => e.target.value && onMove(g, e.target.value)}
-                className="mono text-xs bg-transparent border border-[var(--line)] rounded px-1 py-0.5 text-[var(--muted)] max-w-20"
+                className="input-sm w-[112px] flex-none"
               >
-                <option value="">⇄</option>
+                <option value="">Перенести</option>
                 {targets.map((s) => (
                   <option key={s} value={s}>
-                    → {s}
+                    в {s}
                   </option>
                 ))}
-                <option value={EXCLUDED}>исключить</option>
+                <option value={EXCLUDED}>Исключить</option>
               </select>
             </li>
           );
         })}
-        {summary.groups.length === 0 && summary.system !== UNKNOWN && (
-          <li className="px-4 py-2 text-xs text-[var(--muted)]">Участков нет</li>
-        )}
       </ul>
     </article>
   );
