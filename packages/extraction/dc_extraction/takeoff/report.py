@@ -40,23 +40,10 @@ _DECIMAL_FORMAT = "0.0"
 _MAX_COLUMN_WIDTH = 60
 
 
-def write_xlsx(path: str | Path, title: str, header: list[str], rows: list[list[Any]],
-               total_columns: list[str] | None = None) -> Path:
-    """Write a one-sheet workbook with real numeric cells.
-
-    Unlike the CSV, no locale guessing is involved: floats are stored as
-    numbers, and `total_columns` get a trailing `=SUM()` row so the estimator
-    can edit a figure and see the total follow.
-    """
-    from openpyxl import Workbook
+def _fill_sheet(sheet, header: list[str], rows: list[list[Any]],
+                total_columns: list[str] | None) -> None:
     from openpyxl.styles import Font
     from openpyxl.utils import get_column_letter
-
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    workbook = Workbook()
-    sheet = workbook.active
-    sheet.title = title[:31]  # Excel's sheet-name limit
 
     sheet.append(header)
     for row in rows:
@@ -82,5 +69,29 @@ def write_xlsx(path: str | Path, title: str, header: list[str], rows: list[list[
         widest = max(len(str(c.value)) for c in column if c.value is not None)
         sheet.column_dimensions[column[0].column_letter].width = min(widest + 2,
                                                                     _MAX_COLUMN_WIDTH)
+
+
+def write_xlsx(path: str | Path, title: str, header: list[str], rows: list[list[Any]],
+               total_columns: list[str] | None = None,
+               extra_sheets: list[tuple[str, list[str], list[list[Any]], list[str] | None]]
+               | None = None) -> Path:
+    """Write a workbook with real numeric cells.
+
+    Unlike the CSV, no locale guessing is involved: floats are stored as
+    numbers, and `total_columns` get a trailing `=SUM()` row so the estimator
+    can edit a figure and see the total follow. `extra_sheets` are further
+    (title, header, rows, total_columns) sheets after the first.
+    """
+    from openpyxl import Workbook
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    workbook = Workbook()
+    first = workbook.active
+    first.title = title[:31]  # Excel's sheet-name limit
+    _fill_sheet(first, header, rows, total_columns)
+    for extra_title, extra_header, extra_rows, extra_totals in extra_sheets or []:
+        _fill_sheet(workbook.create_sheet(extra_title[:31]), extra_header, extra_rows,
+                    extra_totals)
     workbook.save(path)
     return path

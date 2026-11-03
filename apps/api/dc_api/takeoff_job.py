@@ -5,7 +5,12 @@ from __future__ import annotations
 import logging
 
 import pymupdf
-from dc_extraction.takeoff import SpecSystem, parse_specification, run_album
+from dc_extraction.takeoff import (
+    SpecSystem,
+    parse_specification,
+    run_album,
+    spec_fitting_counts,
+)
 
 from .db import Document, TakeoffRun, session_scope, utcnow
 from .storage import get_storage
@@ -85,7 +90,8 @@ def run_takeoff(project_id: str, run_id: str) -> None:
             documents[document_id] = {"filename": filename, "sheets": album.to_json()["sheets"]}
 
         _update(run_id, status="COMPLETED", progress_json=None, finished_at=utcnow(),
-                result_json={"spec": _spec_json(spec), "documents": documents})
+                result_json={"spec": _spec_json(spec), "documents": documents,
+                             "spec_fittings": spec_fitting_counts(spec)})
         logger.info("takeoff completed: run=%s", run_id)
     except Exception as exc:  # the run must end in a terminal state whatever happened
         logger.exception("takeoff failed: run=%s", run_id)

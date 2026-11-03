@@ -14,6 +14,8 @@ from . import takeoff_view as view
 from .db import Document, Project, TakeoffRun, get_session
 from .jobs import dispatch_takeoff
 from .schemas_api import (
+    FittingOut,
+    FittingTotalOut,
     SystemTotalOut,
     TakeoffOut,
     TakeoffOverridesIn,
@@ -27,6 +29,7 @@ router = APIRouter(prefix="/api")
 
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 EXPORT_HEADER = ["Система", "Сечение", "Изоляция", "Длина, м"]
+FITTINGS_HEADER = ["Элемент", "Тип", "На планах, шт.", "По спецификации, шт."]
 # Sharp enough to read callouts at the sheet screen's top zoom, small enough
 # (~17 Mpx for an A0 plan) for a browser to draw.
 SHEET_IMAGE_MAX_SIDE = 6000
@@ -78,6 +81,7 @@ def _takeoff_out(run: TakeoffRun) -> TakeoffOut:
         progress=TakeoffProgressOut(**run.progress_json) if run.progress_json else None,
         sheets=sheets,
         systems=[SystemTotalOut(**s) for s in view.systems_summary(result, overrides)],
+        fittings=[FittingTotalOut(**f) for f in view.fittings_summary(result)],
         started_at=run.started_at,
         finished_at=run.finished_at,
     )
@@ -101,6 +105,7 @@ def _sheet_out(run: TakeoffRun, document_id: str, page: int) -> TakeoffSheetOut:
         height=sheet["height"],
         image_url=f"/api/documents/{document_id}/pages/{page}.png?max_side={SHEET_IMAGE_MAX_SIDE}",
         runs=[TakeoffRunOut(**r) for r in sheet["runs"]],
+        fittings=[FittingOut(**f) for f in sheet.get("fittings", [])],
         overrides=overrides.get(key, {}),
         spec_m=view.spec_lengths(result),
         other_sheets_m=view.measured_by_system(result, overrides, skip=key),
@@ -165,8 +170,12 @@ def export_takeoff(takeoff_id: str, session: Session = Depends(get_session)):
     run = _run_or_404(session, takeoff_id)
     rows = view.export_rows(_completed(run), run.overrides_json or {})
     with tempfile.TemporaryDirectory(prefix="foreman_xlsx_") as tmp:
-        path = write_xlsx(Path(tmp) / "takeoff.xlsx", "Воздуховоды", EXPORT_HEADER, rows,
-                          total_columns=["Длина, м"])
+        path = write_xlsx(
+            Path(tmp) / "takeoff.xlsx", "Воздуховоды", EXPORT_HEADER, rows,
+            total_columns=["Длина, м"],
+            extra_sheets=[("Элементы", FITTINGS_HEADER,
+                           view.export_fitting_rows(_completed(run)), None)],
+        )
         data = path.read_bytes()
     filename = quote("ведомость-воздуховодов.xlsx")
     return Response(

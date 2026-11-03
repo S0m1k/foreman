@@ -7,6 +7,7 @@ import { DrawingPane } from "./DrawingPane";
 import { SystemCard } from "./SystemCard";
 import {
   EXCLUDED,
+  countFittings,
   formatM,
   moveTargets,
   summarise,
@@ -55,6 +56,7 @@ export function SheetScreen({ sheet, imageUrl, backHref, onSave, exportHref, isD
   const lastSaved = useRef<Overrides>(sheet.overrides);
 
   const summary = useMemo(() => summarise(sheet, overrides), [sheet, overrides]);
+  const fittingCounts = useMemo(() => countFittings(sheet), [sheet]);
   const sheetTotal = summary.reduce((sum, s) => sum + s.sheetM, 0);
   const excludedCount = Object.values(overrides).filter((v) => v === EXCLUDED).length;
   const changed = Object.keys(overrides).length;
@@ -164,6 +166,25 @@ export function SheetScreen({ sheet, imageUrl, backHref, onSave, exportHref, isD
                 onMove={move}
               />
             ))}
+            {fittingCounts.length > 0 && (
+              <article className="card overflow-hidden">
+                <header className="px-4 py-2.5 flex items-baseline gap-3">
+                  <h3 className="text-sm font-bold">Элементы</h3>
+                  <span className="text-xs text-[var(--muted)]">
+                    {fittingCounts.reduce((sum, f) => sum + f.count, 0)} шт. на листе
+                  </span>
+                </header>
+                <ul className="border-t border-[var(--line)] divide-y divide-[var(--line)]">
+                  {fittingCounts.map((f) => (
+                    <li key={f.mark} className="flex items-center gap-3 px-4 py-1.5 text-sm">
+                      <span className="mono">{f.mark}</span>
+                      <span className="text-xs text-[var(--muted)]">{f.kind}</span>
+                      <span className="mono ml-auto">{f.count}</span>
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            )}
             {summary.length === 0 && (
               <p className="text-sm text-[var(--muted)]">На листе не найдено воздуховодов.</p>
             )}

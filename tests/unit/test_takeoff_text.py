@@ -94,3 +94,11 @@ def test_words_split_where_a_shifted_space_was(tmp_path):
     page = _page(tmp_path, [shifted("План системы отопления", 0x245)])
     texts = [w[4] for w in page_words(page)]
     assert texts == ["План", "системы", "отопления"]
+
+
+def test_soft_hyphens_read_as_plain_hyphens(tmp_path):
+    """Some fonts extract "-" as U+00AD; marks like АДР-К and КЛАПЪ-(60)-НО
+    are matched with a plain hyphen, so words are normalised at the source."""
+    page = _page(tmp_path, ["АДР-К 650x300", "КЛАПЪ-(60)-НО-100x100"])
+    texts = [w[4] for w in page_words(page)]
+    assert texts == ["АДР-К", "650x300", "КЛАПЪ-(60)-НО-100x100"]

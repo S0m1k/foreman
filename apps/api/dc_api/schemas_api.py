@@ -112,6 +112,21 @@ class SystemTotalOut(BaseModel):
     spec_m: float | None = None
 
 
+class FittingTotalOut(BaseModel):
+    mark: str
+    kind: str
+    counted: int
+    spec: int | None = None
+
+
+class FittingOut(BaseModel):
+    id: int
+    mark: str
+    kind: str
+    x: float
+    y: float
+
+
 class TakeoffOut(BaseModel):
     id: str
     project_id: str
@@ -120,6 +135,7 @@ class TakeoffOut(BaseModel):
     progress: TakeoffProgressOut | None = None
     sheets: list[TakeoffSheetSummaryOut] = []
     systems: list[SystemTotalOut] = []
+    fittings: list[FittingTotalOut] = []
     started_at: dt.datetime
     finished_at: dt.datetime | None = None
 
@@ -147,6 +163,7 @@ class TakeoffSheetOut(BaseModel):
     height: float
     image_url: str
     runs: list[TakeoffRunOut]
+    fittings: list[FittingOut] = []
     overrides: dict[str, str]
     spec_m: dict[str, float]
     # each system's length on the project's other plan sheets, edits applied,

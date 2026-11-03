@@ -18,11 +18,22 @@ const ZOOMS = [1, 2, 4, 8];
 
 export function DrawingPane({ sheet, imageUrl, overrides, highlighted, onHover, onPick }: Props) {
   const [zoom, setZoom] = useState(1);
+  const [showFittings, setShowFittings] = useState(true);
   const dim = highlighted.size > 0;
 
   return (
     <section className="relative flex-1 min-w-0 flex flex-col">
       <div className="absolute right-4 top-4 z-10 flex items-center gap-1 card px-1.5 py-1">
+        <button
+          onClick={() => setShowFittings((on) => !on)}
+          aria-pressed={showFittings}
+          title="Решётки и клапаны"
+          className={`text-xs px-2 py-1 rounded mr-1 ${
+            showFittings ? "text-[var(--accent)]" : "text-[var(--muted)] hover:text-[var(--text)]"
+          }`}
+        >
+          ◆ элементы
+        </button>
         {ZOOMS.map((z) => (
           <button
             key={z}
@@ -74,6 +85,15 @@ export function DrawingPane({ sheet, imageUrl, overrides, highlighted, onHover, 
               </g>
             );
           })}
+          {showFittings &&
+            (sheet.fittings ?? []).map((item) => (
+              <g key={`f${item.id}`} transform={`translate(${item.x} ${item.y})`}>
+                <title>{item.mark}</title>
+                <rect x={-5} y={-5} width={10} height={10} transform="rotate(45)"
+                      fill={item.kind === "клапан" ? "#f5a524" : "#1e252d"}
+                      stroke="#f5a524" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+              </g>
+            ))}
         </svg>
       </div>
     </section>

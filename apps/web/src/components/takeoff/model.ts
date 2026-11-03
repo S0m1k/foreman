@@ -105,6 +105,21 @@ export function moveTargets(sheet: TakeoffSheet, current: string): string[] {
     .sort(naturalOrder);
 }
 
+export interface FittingCount {
+  mark: string;
+  kind: string;
+  count: number;
+}
+
+export function countFittings(sheet: TakeoffSheet): FittingCount[] {
+  const counts = new Map<string, FittingCount>();
+  for (const item of sheet.fittings ?? []) {
+    const prev = counts.get(item.mark);
+    counts.set(item.mark, { mark: item.mark, kind: item.kind, count: (prev?.count ?? 0) + 1 });
+  }
+  return [...counts.values()].sort((a, b) => b.count - a.count || naturalOrder(a.mark, b.mark));
+}
+
 const fmt = (value: number) => value.toFixed(1).replace(".", ",");
 export const formatM = fmt;
 

@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "helpers"))
 
-from pdfgen import DuctSegment, SpecDuct, make_album_pdf  # noqa: E402
+from pdfgen import DuctSegment, SpecDuct, SpecFitting, make_album_pdf  # noqa: E402
 
 RED = (1.0, 0.0, 0.0)
 BLUE = (0.0, 0.0, 1.0)
@@ -33,6 +33,10 @@ def album_pdf(tmp_path_factory):
         [DuctSegment((0, 0), (10, 0), 600, RED), DuctSegment((0, 6), (8, 6), 500, BLUE)],
         callouts=[((140, 600), ["П1", "600x350"], (3.0, 0.0))],
         spec=[SpecDuct("П1", "600x350", 12.5), SpecDuct("В1", "500x300", 9.0)],
+        labels=[((300, 400), "АМР 400х200"), ((300, 430), "АМР 400x200"),
+                ((300, 460), "АДР-К 650x300"), ((600, 400), "КЛАПЪ-(60)-НО-100x100")],
+        fittings=[SpecFitting("П1", "Решетка АМР 400х200", 5),
+                  SpecFitting("П1", "Клапан КЛАПЪ-(60)-НО-100x100", 1)],
     )
     return path
 
@@ -196,3 +200,33 @@ def test_takeoff_needs_a_drawing(client):
 def test_no_takeoff_yet_is_a_404(client):
     project_id = _new_project(client, "Fresh")
     assert client.get(f"/api/projects/{project_id}/takeoff").status_code == 404
+
+
+def test_summary_counts_fittings_against_the_specification(done):
+    _, _, body = done
+    fittings = {f["mark"]: f for f in body["fittings"]}
+    assert fittings["АМР 400x200"] == {
+        "mark": "АМР 400x200", "kind": "решётка", "counted": 2, "spec": 5}
+    assert fittings["КЛАПЪ-(60)-НО-100x100"]["counted"] == 1
+    assert fittings["КЛАПЪ-(60)-НО-100x100"]["spec"] == 1
+    # on a plan but not in the specification's equipment rows
+    assert fittings["АДР-К 650x300"]["spec"] is None
+
+
+def test_sheet_payload_carries_fitting_positions(client, done):
+    _, document_id, body = done
+    sheet = client.get(f"/api/takeoffs/{body['id']}/sheets/{document_id}/1").json()
+    assert len(sheet["fittings"]) == 4
+    assert {"id", "mark", "kind", "x", "y"} <= set(sheet["fittings"][0])
+
+
+def test_export_has_an_elements_sheet(client, done):
+    _, _, body = done
+    response = client.get(f"/api/takeoffs/{body['id']}/export.xlsx")
+    book = openpyxl.load_workbook(io.BytesIO(response.content))
+    assert book.sheetnames == ["Воздуховоды", "Элементы"]
+    rows = list(book["Элементы"].iter_rows(values_only=True))
+    assert rows[0] == ("Элемент", "Тип", "На планах, шт.", "По спецификации, шт.")
+    by_mark = {r[0]: r for r in rows[1:]}
+    assert by_mark["АМР 400x200"][2:] == (2, 5)
+    assert by_mark["АДР-К 650x300"][3] is None

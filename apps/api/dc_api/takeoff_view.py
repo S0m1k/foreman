@@ -118,3 +118,26 @@ def export_rows(result: dict, overrides: dict) -> list[list]:
     ordered = sorted(grouped.items(), key=lambda kv: (kv[0][0] == UNKNOWN, kv[0]))
     return [[system, section, insulated, round(length, 2)]
             for (system, section, insulated), length in ordered]
+
+
+def fittings_summary(result: dict) -> list[dict]:
+    """Grilles and dampers counted on the plans against the specification's rows.
+
+    A mark is listed when either side has it: on a plan only (the
+    specification may name it differently, or omit it) or in the specification
+    only (counted on plans not measured yet).
+    """
+    counted: collections.Counter = collections.Counter()
+    kinds: dict[str, str] = {}
+    for _, sheet in plan_sheets(result):
+        for item in sheet.get("fittings", []):
+            counted[item["mark"]] += 1
+            kinds[item["mark"]] = item["kind"]
+    spec = result.get("spec_fittings", {})
+    marks = sorted(set(counted) | set(spec), key=lambda m: (kinds.get(m, "~"), m))
+    return [{"mark": m, "kind": kinds.get(m, "решётка"), "counted": counted.get(m, 0),
+             "spec": spec.get(m)} for m in marks]
+
+
+def export_fitting_rows(result: dict) -> list[list]:
+    return [[f["mark"], f["kind"], f["counted"], f["spec"]] for f in fittings_summary(result)]

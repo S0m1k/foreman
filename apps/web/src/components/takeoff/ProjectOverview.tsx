@@ -1,5 +1,11 @@
 import Link from "next/link";
-import type { SheetKind, SystemTotal, Takeoff, TakeoffSheetSummary } from "@/lib/api";
+import type {
+  FittingTotal,
+  SheetKind,
+  SystemTotal,
+  Takeoff,
+  TakeoffSheetSummary,
+} from "@/lib/api";
 import { UNKNOWN, formatM, naturalOrder, systemColour, verdict } from "./model";
 
 interface Props {
@@ -115,6 +121,41 @@ function SystemsTable({ systems }: { systems: SystemTotal[] }) {
   );
 }
 
+function countVerdict(counted: number, spec: number | null) {
+  if (spec === null) return { label: "нет в спецификации", tone: "chip-medium" };
+  if (counted > spec) return { label: `+${counted - spec} сверх`, tone: "chip-high" };
+  if (counted === spec) return { label: "сходится", tone: "chip-ok" };
+  return { label: `ещё ${spec - counted}`, tone: "chip-low" };
+}
+
+function FittingsTable({ fittings }: { fittings: FittingTotal[] }) {
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="text-xs text-[var(--muted)] text-left">
+          <th className="font-normal py-2">Элемент</th>
+          <th className="font-normal text-right">На планах</th>
+          <th className="font-normal text-right">По спец.</th>
+          <th className="font-normal text-right">Сверка</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-[var(--line)]">
+        {fittings.map((f) => {
+          const v = countVerdict(f.counted, f.spec);
+          return (
+            <tr key={f.mark}>
+              <td className="py-1.5 mono">{f.mark}</td>
+              <td className="mono text-right">{f.counted}</td>
+              <td className="mono text-right text-[var(--muted)]">{f.spec ?? "—"}</td>
+              <td className="text-right"><span className={`chip ${v.tone}`}>{v.label}</span></td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
 export function ProjectOverview({ projectId, takeoff, exportHref }: Props) {
   const plans = takeoff.sheets.filter((s) => s.kind === "plan");
   const skipped = takeoff.sheets.filter((s) => s.kind !== "plan");
@@ -143,6 +184,15 @@ export function ProjectOverview({ projectId, takeoff, exportHref }: Props) {
           </div>
         )}
         {skipped.length > 0 && <SkippedSheets sheets={skipped} />}
+        {(takeoff.fittings ?? []).length > 0 && (
+          <div className="card p-4 mt-4">
+            <h2 className="font-bold mb-1">Решётки и клапаны</h2>
+            <p className="text-xs text-[var(--muted)] mb-2">
+              Подписи на планах против строк оборудования в спецификации.
+            </p>
+            <div className="max-h-80 overflow-auto"><FittingsTable fittings={takeoff.fittings} /></div>
+          </div>
+        )}
       </section>
 
       <aside className="card p-4 lg:sticky lg:top-20">

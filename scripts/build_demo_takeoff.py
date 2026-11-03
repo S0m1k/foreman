@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 from dc_extraction.takeoff import run_album  # noqa: E402
 from helpers.pdfgen import DuctSegment as S  # noqa: E402
-from helpers.pdfgen import SpecDuct, make_album_pdf  # noqa: E402
+from helpers.pdfgen import SpecDuct, SpecFitting, make_album_pdf  # noqa: E402
 
 WEB = ROOT / "apps" / "web"
 RED, BLUE, GREEN = (1.0, 0.0, 0.0), (0.0, 0.0, 1.0), (0.0, 0.53, 0.0)
@@ -43,12 +43,17 @@ SPEC = [
     SpecDuct("В1", "600x350", 14.0), SpecDuct("В1", "400x200", 5.5),
     SpecDuct("ДВ1", "800x500", 10.0),
 ]
+LABELS = [((380, 410), "АМР 400х200"), ((470, 560), "АМР 400х200"), ((620, 330), "АДР-К 650x300"),
+          ((760, 230), "КЛАПЪ-(60)-НО-100x100"), ((200, 520), "АМР 200х400")]
+FITTINGS = [SpecFitting("В1", "Решетка АМР 400х200", 4),
+            SpecFitting("В1", "Решетка АМР 200х400", 1),
+            SpecFitting("П1", "Клапан КЛАПЪ-(60)-НО-100x100", 1)]
 
 
 def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "demo_album_OV.pdf"
-        make_album_pdf(path, SEGMENTS, CALLOUTS, SPEC)
+        make_album_pdf(path, SEGMENTS, CALLOUTS, SPEC, LABELS, FITTINGS)
         with pymupdf.open(path) as doc:
             album = run_album(doc).to_json()
             svg = doc[0].get_svg_image(text_as_path=False)
@@ -65,6 +70,7 @@ def main() -> None:
         "height": plan["height"],
         "image_url": "/demo/sheet-1.svg",
         "runs": plan["runs"],
+        "fittings": plan["fittings"],
         "overrides": {},
         "spec_m": {name: entry["length_m"] for name, entry in album["spec"].items()},
         "other_sheets_m": {},

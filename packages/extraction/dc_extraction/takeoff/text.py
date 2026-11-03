@@ -112,8 +112,9 @@ def page_text(page: pymupdf.Page) -> str:
 
 def page_words(page: pymupdf.Page) -> list[tuple]:
     """`page.get_text("words")`, repaired; a restored space splits the word,
-    sharing its box between the parts by character count."""
-    words = page.get_text("words")
+    sharing its box between the parts by character count. Soft hyphens, which
+    some fonts use for "-", read as plain hyphens."""
+    words = [(*w[:4], w[4].replace(SOFT_HYPHEN, "-"), *w[5:]) for w in page.get_text("words")]
     shifts = detect_shifts(" ".join(w[4] for w in words))
     if not shifts:
         return words

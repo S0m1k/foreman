@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 
 import pymupdf
 
+from .fittings import Fitting, fittings, spec_fitting_counts
 from .pipeline import TakeoffRow, takeoff
 from .sheets import SheetKind, classify_sheet
 from .spec import SpecSystem, parse_specification
@@ -32,6 +33,15 @@ class AlbumRun:
     p1: tuple[float, float]
 
 
+@dataclass(frozen=True)
+class AlbumFitting:
+    id: int
+    mark: str
+    kind: str
+    x: float
+    y: float
+
+
 @dataclass
 class AlbumSheet:
     page: int
@@ -41,12 +51,14 @@ class AlbumSheet:
     height: float
     scale: int | None = None
     runs: list[AlbumRun] = field(default_factory=list)
+    fittings: list[AlbumFitting] = field(default_factory=list)
 
 
 @dataclass
 class AlbumTakeoff:
     sheets: list[AlbumSheet]
     spec: dict[str, SpecSystem]
+    spec_fittings: dict[str, int] = field(default_factory=dict)
 
     def to_json(self) -> dict:
         return {
@@ -59,15 +71,22 @@ class AlbumTakeoff:
                     "height": round(s.height, 2),
                     "scale": s.scale,
                     "runs": [_run_json(r) for r in s.runs],
+                    "fittings": [_fitting_json(f) for f in s.fittings],
                 }
                 for s in self.sheets
             ],
+            "spec_fittings": self.spec_fittings,
             "spec": {
                 name: {"length_m": round(entry.length_m, 2),
                        "sections": {k: round(v, 2) for k, v in entry.sections.items()}}
                 for name, entry in self.spec.items()
             },
         }
+
+
+def _fitting_json(item: AlbumFitting) -> dict:
+    return {"id": item.id, "mark": item.mark, "kind": item.kind,
+            "x": round(item.x, 1), "y": round(item.y, 1)}
 
 
 def _run_json(run: AlbumRun) -> dict:
@@ -116,7 +135,11 @@ def run_album(doc: pymupdf.Document, spec: dict[str, SpecSystem] | None = None,
         for result in results:
             by_page[result.page].scale = result.scale
         _attach_runs(rows, results, by_page)
-    return AlbumTakeoff(sheets=sheets, spec=spec)
+        for sheet in plans:
+            found: list[Fitting] = fittings(doc[sheet.page - 1])
+            sheet.fittings.extend(
+                AlbumFitting(i, f.mark, f.kind, f.x, f.y) for i, f in enumerate(found))
+    return AlbumTakeoff(sheets=sheets, spec=spec, spec_fittings=spec_fitting_counts(spec))
 
 
 def _attach_runs(rows: list[TakeoffRow], results, by_page: dict[int, AlbumSheet]) -> None:

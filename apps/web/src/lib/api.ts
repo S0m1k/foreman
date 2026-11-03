@@ -163,6 +163,15 @@ export type SystemTotal = {
   spec_m: number | null;
 };
 
+export type FittingTotal = {
+  mark: string;
+  kind: string;
+  counted: number;
+  spec: number | null;
+};
+
+export type Fitting = { id: number; mark: string; kind: string; x: number; y: number };
+
 export type Takeoff = {
   id: string;
   project_id: string;
@@ -171,6 +180,7 @@ export type Takeoff = {
   progress?: { step: "classify" | "spec" | "measure"; done: number; total: number; document?: string | null } | null;
   sheets: TakeoffSheetSummary[];
   systems: SystemTotal[];
+  fittings: FittingTotal[];
 };
 
 export type TakeoffRun = {
@@ -196,6 +206,7 @@ export type TakeoffSheet = {
   height: number;
   image_url: string;
   runs: TakeoffRun[];
+  fittings: Fitting[];
   overrides: Record<string, string>;
   spec_m: Record<string, number>;
   other_sheets_m: Record<string, number>;

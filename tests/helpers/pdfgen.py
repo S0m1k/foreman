@@ -225,16 +225,32 @@ class SpecDuct:
     length_m: float
 
 
+@dataclass
+class SpecFitting:
+    system: str
+    name: str        # e.g. "Решетка АМР 400х200"
+    count: int
+
+
 def make_album_pdf(path: str | Path, segments: list[DuctSegment],
                    callouts: list[Callout] | None = None,
-                   spec: list[SpecDuct] | None = None) -> None:
-    """Page 1 plan, page 2 schematic of the same ducts, page 3 specification."""
+                   spec: list[SpecDuct] | None = None,
+                   labels: list[tuple[tuple[float, float], str]] | None = None,
+                   fittings: list[SpecFitting] | None = None) -> None:
+    """Page 1 plan, page 2 schematic of the same ducts, page 3 specification.
+
+    `labels` are free text on the plan (grille and damper marks, in points);
+    `fittings` are equipment rows of the specification, counted in "шт.".
+    """
     doc = pymupdf.open()
     for title in ("План 1 этажа", "Схема систем П1, В1"):
         page = doc.new_page(width=1200, height=850)
         page.insert_font(fontname=FONT, fontfile=_font_file())
         draw_duct_plan(page, segments, callouts)
         page.insert_text((900, 820), title, fontsize=11, fontname=FONT)
+        if title.startswith("План"):
+            for (x, y), text in labels or []:
+                page.insert_text((x, y), text, fontsize=9, fontname=FONT)
 
     page = doc.new_page(width=1191, height=842)
     page.insert_font(fontname=FONT, fontfile=_font_file())
@@ -254,6 +270,12 @@ def make_album_pdf(path: str | Path, segments: list[DuctSegment],
         page.insert_text((SPEC_X_UNIT, y), "м", fontsize=9, fontname=FONT)
         page.insert_text((SPEC_X_QTY, y), f"{row.length_m:g}".replace(".", ","),
                          fontsize=9, fontname=FONT)
+        y += 16
+    for item in fittings or []:
+        page.insert_text((SPEC_X_SYSTEM, y), item.system, fontsize=9, fontname=FONT)
+        page.insert_text((SPEC_X_NAME, y), item.name, fontsize=9, fontname=FONT)
+        page.insert_text((SPEC_X_UNIT, y), "шт.", fontsize=9, fontname=FONT)
+        page.insert_text((SPEC_X_QTY, y), str(item.count), fontsize=9, fontname=FONT)
         y += 16
     doc.save(str(path))
     doc.close()

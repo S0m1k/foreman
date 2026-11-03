@@ -21,7 +21,7 @@ from .text import page_text, page_words
 DUCT_RE = re.compile(r"стали\s+([⌀øØФ]?\s?\d+(?:\s?[xх×]\s?\d+)?)", re.IGNORECASE)
 SYSTEM_RE = re.compile(r"^(В|П|ДВ|ПД|ДП)\d+(\.\d+)?[аб]?$")
 EQUIPMENT_RE = re.compile(
-    r"(КЛАПЪ-\(\d+\)-Н[ОЗ]\(?C?\)?-\d+x\d+|АДР[ -][\dхx]+|АРН[ -][\dхx]+|АМР[ -][\dхx]+)"
+    r"(КЛАПЪ-\(\d+\)-Н[ОЗ]\(?C?\)?-\d+x\d+|АДР(?:-К)?[ -][\dхx]+|АРН[ -][\dхx]+|АМР[ -][\dхx]+)"
 )
 QUANTITY_RE = re.compile(r"шт\.?\s+(\d+)")
 
